@@ -1,8 +1,53 @@
 # Stockflow ERP Mock
 
-`stockflow-erp-mock` is an external sandbox service that emulates inventory
-reservation flows of an ERP/WMS integration. The service is implemented in Go
-and exposes an HTTP interface for health checks and local administration.
+`stockflow-erp-mock` is an external sandbox service that emulates an ERP/WMS
+inventory reservation integration for the `stockflow-market` case study. It is
+**not** a real ERP: stock, reservations, and warehouse state are simulated for
+local demos and integration testing.
+
+The service is implemented in Go. It communicates with the marketplace through
+RabbitMQ and AsyncAPI contracts, and exposes an HTTP API for health checks,
+stock inspection, and debug tooling.
+
+## StockFlow ecosystem
+
+Part of the StockFlow ecosystem:
+
+- [stockflow-market](https://github.com/Smiley-Alyx/stockflow-market) — marketplace backend case study
+- [stockflow-erp-mock](https://github.com/Smiley-Alyx/stockflow-erp-mock) — external ERP / inventory integration mock (this repository)
+- [stockflow-payment-mock](https://github.com/Smiley-Alyx/stockflow-payment-mock) — external payment provider mock
+- [stockflow-delivery-mock](https://github.com/Smiley-Alyx/stockflow-delivery-mock) — external delivery provider mock
+
+`stockflow-market` orchestrates checkout and order fulfillment. Each external mock
+implements one provider boundary over RabbitMQ with AsyncAPI contracts, shared
+header conventions (`correlation_id`, `idempotency_key`, `causation_id`), and
+retry/DLQ handling:
+
+| Service | Exchange | Responsibility |
+| --- | --- | --- |
+| **stockflow-erp-mock** (this repo) | `stockflow.inventory` | Reserve and release stock in the external ERP sandbox |
+| [stockflow-payment-mock](https://github.com/Smiley-Alyx/stockflow-payment-mock) | `stockflow.payment` | Authorize, capture, and refund card payments |
+| [stockflow-delivery-mock](https://github.com/Smiley-Alyx/stockflow-delivery-mock) | `stockflow.delivery` | Create shipments and publish tracking status events |
+
+A typical checkout in the case study chains these boundaries: the marketplace
+reserves inventory, requests payment authorization (and later capture), then
+requests shipment creation once the order is paid. The same `correlation_id`
+ties messages across all three integrations so the market can reconstruct the
+full order timeline.
+
+See [`docs/architecture.md`](docs/architecture.md#stockflow-ecosystem) for the
+end-to-end diagram and links to sibling repositories.
+
+## Documentation
+
+Portfolio-grade integration documentation:
+
+| Document | Description |
+| --- | --- |
+| [`docs/architecture.md`](docs/architecture.md) | System design, layers, deployment, trade-offs |
+| [`docs/integration-flow.md`](docs/integration-flow.md) | Message flows, RabbitMQ topology, idempotency |
+| [`docs/failure-modes.md`](docs/failure-modes.md) | Sandbox failure injection and test matrix |
+| [`docs/demo.md`](docs/demo.md) | Hands-on walkthrough and presentation narrative |
 
 ## Local run
 
@@ -85,4 +130,17 @@ The DLQ requeue endpoint accepts one of the logical queue names:
 `reservation_requests` or `reservation_release_requests`.
 
 Sandbox failure simulation modes and request examples are documented in
-[`docs/failure-modes.md`](docs/failure-modes.md).
+[`docs/failure-modes.md`](docs/failure-modes.md). For a guided walkthrough,
+see [`docs/demo.md`](docs/demo.md).
+
+## Portfolio scope
+
+This repository is part of the [StockFlow ecosystem](#stockflow-ecosystem): a
+highload-oriented marketplace backend case study with external service mocks.
+It demonstrates:
+
+- inventory reservation and release over RabbitMQ
+- idempotent message handling with retry and DLQ
+- failure simulation for chaos testing
+- Prometheus metrics and structured observability
+- AsyncAPI contracts and integration tests
