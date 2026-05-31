@@ -4,20 +4,27 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	defaultHTTPAddress     = ":8080"
-	defaultLogLevel        = "info"
-	defaultShutdownTimeout = 10 * time.Second
+	defaultHTTPAddress           = ":8080"
+	defaultLogLevel              = "info"
+	defaultRabbitMQConsumerTag   = "stockflow-erp-mock"
+	defaultRabbitMQPrefetchCount = 10
+	defaultRabbitMQURL           = "amqp://stockflow:stockflow@localhost:5672/"
+	defaultShutdownTimeout       = 10 * time.Second
 )
 
 type Config struct {
-	HTTPAddress     string
-	LogLevel        slog.Level
-	ShutdownTimeout time.Duration
+	HTTPAddress           string
+	LogLevel              slog.Level
+	RabbitMQConsumerTag   string
+	RabbitMQPrefetchCount int
+	RabbitMQURL           string
+	ShutdownTimeout       time.Duration
 }
 
 func Load() (Config, error) {
@@ -31,10 +38,18 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	rabbitMQPrefetchCount, err := positiveIntFromEnv("ERP_RABBITMQ_PREFETCH_COUNT", defaultRabbitMQPrefetchCount)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
-		HTTPAddress:     stringFromEnv("ERP_HTTP_ADDRESS", defaultHTTPAddress),
-		LogLevel:        logLevel,
-		ShutdownTimeout: shutdownTimeout,
+		HTTPAddress:           stringFromEnv("ERP_HTTP_ADDRESS", defaultHTTPAddress),
+		LogLevel:              logLevel,
+		RabbitMQConsumerTag:   stringFromEnv("ERP_RABBITMQ_CONSUMER_TAG", defaultRabbitMQConsumerTag),
+		RabbitMQPrefetchCount: rabbitMQPrefetchCount,
+		RabbitMQURL:           stringFromEnv("ERP_RABBITMQ_URL", defaultRabbitMQURL),
+		ShutdownTimeout:       shutdownTimeout,
 	}, nil
 }
 
@@ -62,6 +77,23 @@ func durationFromEnv(key string, fallback time.Duration) (time.Duration, error) 
 	}
 
 	return duration, nil
+}
+
+func positiveIntFromEnv(key string, fallback int) (int, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsedValue, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s: %w", key, err)
+	}
+	if parsedValue <= 0 {
+		return 0, fmt.Errorf("%s must be positive", key)
+	}
+
+	return parsedValue, nil
 }
 
 func parseLogLevel(value string) (slog.Level, error) {

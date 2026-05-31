@@ -41,6 +41,9 @@ make docker-down
 | --- | --- | --- |
 | `ERP_HTTP_ADDRESS` | `:8080` | HTTP server listen address |
 | `ERP_LOG_LEVEL` | `info` | Structured log level |
+| `ERP_RABBITMQ_URL` | `amqp://stockflow:stockflow@localhost:5672/` | RabbitMQ connection URL |
+| `ERP_RABBITMQ_CONSUMER_TAG` | `stockflow-erp-mock` | RabbitMQ consumer tag |
+| `ERP_RABBITMQ_PREFETCH_COUNT` | `10` | Maximum number of unacknowledged messages |
 | `ERP_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown timeout |
 
 ## HTTP endpoints
