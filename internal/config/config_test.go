@@ -11,6 +11,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("ERP_LOG_LEVEL", "")
 	t.Setenv("ERP_RABBITMQ_CONSUMER_TAG", "")
 	t.Setenv("ERP_RABBITMQ_PREFETCH_COUNT", "")
+	t.Setenv("ERP_RABBITMQ_PUBLISH_TIMEOUT", "")
 	t.Setenv("ERP_RABBITMQ_URL", "")
 	t.Setenv("ERP_SHUTDOWN_TIMEOUT", "")
 
@@ -31,6 +32,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.RabbitMQPrefetchCount != 10 {
 		t.Errorf("RabbitMQPrefetchCount = %d, want %d", cfg.RabbitMQPrefetchCount, 10)
 	}
+	if cfg.RabbitMQPublishTimeout != 5*time.Second {
+		t.Errorf("RabbitMQPublishTimeout = %v, want %v", cfg.RabbitMQPublishTimeout, 5*time.Second)
+	}
 	if cfg.RabbitMQURL != "amqp://stockflow:stockflow@localhost:5672/" {
 		t.Errorf("RabbitMQURL = %q", cfg.RabbitMQURL)
 	}
@@ -44,6 +48,7 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("ERP_LOG_LEVEL", "debug")
 	t.Setenv("ERP_RABBITMQ_CONSUMER_TAG", "erp-mock-test")
 	t.Setenv("ERP_RABBITMQ_PREFETCH_COUNT", "25")
+	t.Setenv("ERP_RABBITMQ_PUBLISH_TIMEOUT", "2s")
 	t.Setenv("ERP_RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 	t.Setenv("ERP_SHUTDOWN_TIMEOUT", "3s")
 
@@ -63,6 +68,9 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.RabbitMQPrefetchCount != 25 {
 		t.Errorf("RabbitMQPrefetchCount = %d, want %d", cfg.RabbitMQPrefetchCount, 25)
+	}
+	if cfg.RabbitMQPublishTimeout != 2*time.Second {
+		t.Errorf("RabbitMQPublishTimeout = %v, want %v", cfg.RabbitMQPublishTimeout, 2*time.Second)
 	}
 	if cfg.RabbitMQURL != "amqp://guest:guest@rabbitmq:5672/" {
 		t.Errorf("RabbitMQURL = %q", cfg.RabbitMQURL)

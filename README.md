@@ -44,6 +44,7 @@ make docker-down
 | `ERP_RABBITMQ_URL` | `amqp://stockflow:stockflow@localhost:5672/` | RabbitMQ connection URL |
 | `ERP_RABBITMQ_CONSUMER_TAG` | `stockflow-erp-mock` | RabbitMQ consumer tag |
 | `ERP_RABBITMQ_PREFETCH_COUNT` | `10` | Maximum number of unacknowledged messages |
+| `ERP_RABBITMQ_PUBLISH_TIMEOUT` | `5s` | Publisher confirmation timeout |
 | `ERP_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown timeout |
 
 ## HTTP endpoints

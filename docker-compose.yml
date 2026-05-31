@@ -7,6 +7,7 @@ services:
       ERP_LOG_LEVEL: info
       ERP_RABBITMQ_CONSUMER_TAG: stockflow-erp-mock
       ERP_RABBITMQ_PREFETCH_COUNT: 10
+      ERP_RABBITMQ_PUBLISH_TIMEOUT: 5s
       ERP_RABBITMQ_URL: amqp://stockflow:stockflow@rabbitmq:5672/
       ERP_SHUTDOWN_TIMEOUT: 10s
     ports:

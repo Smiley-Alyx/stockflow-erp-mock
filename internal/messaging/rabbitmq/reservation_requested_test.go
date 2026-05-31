@@ -84,13 +84,18 @@ func TestConsumerHandleDeliveryAcknowledgesProcessedMessage(t *testing.T) {
 	delivery.DeliveryTag = 1
 	consumer := &Consumer{logger: discardLogger()}
 
-	err := consumer.handleDelivery(context.Background(), delivery, reservationHandlerStub{})
+	publisher := &reservationResultPublisherStub{}
+
+	err := consumer.handleDelivery(context.Background(), delivery, reservationHandlerStub{}, publisher)
 
 	if err != nil {
 		t.Fatalf("handleDelivery() error = %v", err)
 	}
 	if acknowledger.acked != 1 {
 		t.Errorf("acked = %d, want %d", acknowledger.acked, 1)
+	}
+	if publisher.published != 1 {
+		t.Errorf("published = %d, want %d", publisher.published, 1)
 	}
 }
 
@@ -102,7 +107,7 @@ func TestConsumerHandleDeliveryRejectsInvalidMessageWithoutRequeue(t *testing.T)
 	delivery.DeliveryTag = 1
 	consumer := &Consumer{logger: discardLogger()}
 
-	err := consumer.handleDelivery(context.Background(), delivery, reservationHandlerStub{})
+	err := consumer.handleDelivery(context.Background(), delivery, reservationHandlerStub{}, &reservationResultPublisherStub{})
 
 	if err != nil {
 		t.Fatalf("handleDelivery() error = %v", err)
@@ -112,6 +117,27 @@ func TestConsumerHandleDeliveryRejectsInvalidMessageWithoutRequeue(t *testing.T)
 	}
 	if acknowledger.requeue {
 		t.Error("requeue = true, want false")
+	}
+}
+
+func TestConsumerHandleDeliveryRequeuesMessageWhenPublishFails(t *testing.T) {
+	acknowledger := &recordingAcknowledger{}
+	delivery := validDelivery()
+	delivery.Acknowledger = acknowledger
+	delivery.DeliveryTag = 1
+	consumer := &Consumer{logger: discardLogger()}
+	publisher := &reservationResultPublisherStub{err: errors.New("publish failed")}
+
+	err := consumer.handleDelivery(context.Background(), delivery, reservationHandlerStub{}, publisher)
+
+	if err != nil {
+		t.Fatalf("handleDelivery() error = %v", err)
+	}
+	if acknowledger.nacked != 1 {
+		t.Errorf("nacked = %d, want %d", acknowledger.nacked, 1)
+	}
+	if !acknowledger.requeue {
+		t.Error("requeue = false, want true")
 	}
 }
 
@@ -137,6 +163,16 @@ func (reservationHandlerStub) HandleReservationRequested(
 	app.ReservationRequest,
 ) (app.ReservationResult, error) {
 	return app.ReservationResult{Decision: app.ReservationDecisionConfirmed}, nil
+}
+
+type reservationResultPublisherStub struct {
+	published int
+	err       error
+}
+
+func (p *reservationResultPublisherStub) PublishReservationResult(context.Context, app.ReservationResult) error {
+	p.published++
+	return p.err
 }
 
 type recordingAcknowledger struct {

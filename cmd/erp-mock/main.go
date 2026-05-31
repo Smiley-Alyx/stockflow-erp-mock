@@ -54,6 +54,20 @@ func run() int {
 		}
 	}()
 
+	rabbitMQPublisher, err := rabbitmq.NewPublisher(rabbitmq.PublisherConfig{
+		URL:            cfg.RabbitMQURL,
+		PublishTimeout: cfg.RabbitMQPublishTimeout,
+	})
+	if err != nil {
+		logger.Error("initialize RabbitMQ publisher", "error", err)
+		return 1
+	}
+	defer func() {
+		if err := rabbitMQPublisher.Close(); err != nil {
+			logger.Error("close RabbitMQ publisher", "error", err)
+		}
+	}()
+
 	consumerContext, cancelConsumer := context.WithCancel(context.Background())
 	defer cancelConsumer()
 
@@ -62,6 +76,7 @@ func run() int {
 		consumerErrors <- rabbitMQConsumer.Consume(
 			consumerContext,
 			app.NewInventoryReservationHandler(inventoryRepository),
+			rabbitMQPublisher,
 		)
 	}()
 
@@ -104,6 +119,10 @@ func run() int {
 	cancelConsumer()
 	if err := rabbitMQConsumer.Close(); err != nil {
 		logger.Error("close RabbitMQ consumer", "error", err)
+		return 1
+	}
+	if err := rabbitMQPublisher.Close(); err != nil {
+		logger.Error("close RabbitMQ publisher", "error", err)
 		return 1
 	}
 

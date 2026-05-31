@@ -32,6 +32,10 @@ type Consumer struct {
 	closeOnce   sync.Once
 }
 
+type ReservationResultPublisher interface {
+	PublishReservationResult(ctx context.Context, result app.ReservationResult) error
+}
+
 func NewConsumer(config ConsumerConfig, logger *slog.Logger) (*Consumer, error) {
 	connection, err := amqp.Dial(config.URL)
 	if err != nil {
@@ -58,7 +62,11 @@ func NewConsumer(config ConsumerConfig, logger *slog.Logger) (*Consumer, error) 
 	return consumer, nil
 }
 
-func (c *Consumer) Consume(ctx context.Context, handler app.ReservationRequestHandler) error {
+func (c *Consumer) Consume(
+	ctx context.Context,
+	handler app.ReservationRequestHandler,
+	publisher ReservationResultPublisher,
+) error {
 	deliveries, err := c.channel.Consume(
 		ReservationRequestedQueueName,
 		c.consumerTag,
@@ -95,7 +103,7 @@ func (c *Consumer) Consume(ctx context.Context, handler app.ReservationRequestHa
 				return fmt.Errorf("RabbitMQ deliveries channel closed")
 			}
 
-			if err := c.handleDelivery(ctx, delivery, handler); err != nil {
+			if err := c.handleDelivery(ctx, delivery, handler, publisher); err != nil {
 				return err
 			}
 		}
@@ -162,6 +170,7 @@ func (c *Consumer) handleDelivery(
 	ctx context.Context,
 	delivery amqp.Delivery,
 	handler app.ReservationRequestHandler,
+	publisher ReservationResultPublisher,
 ) error {
 	request, err := decodeReservationRequested(delivery)
 	if err != nil {
@@ -182,6 +191,19 @@ func (c *Consumer) handleDelivery(
 		)
 
 		return nack(delivery, requeue)
+	}
+
+	if err := publisher.PublishReservationResult(ctx, result); err != nil {
+		c.logger.Error(
+			"publish reservation result",
+			"message_id", request.Metadata.MessageID,
+			"correlation_id", request.Metadata.CorrelationID,
+			"reservation_id", request.ReservationID,
+			"decision", result.Decision,
+			"error", err,
+		)
+
+		return nack(delivery, true)
 	}
 
 	c.logger.Info(
