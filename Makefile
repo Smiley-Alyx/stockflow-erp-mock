@@ -1,4 +1,4 @@
-.PHONY: build docker-down docker-up fmt run test vet
+.PHONY: build docker-down docker-up fmt run test test-integration vet
 
 build:
 	mkdir -p bin
@@ -12,6 +12,9 @@ fmt:
 
 test:
 	go test ./...
+
+test-integration:
+	go test -tags=integration -count=1 -timeout=5m ./internal/messaging/rabbitmq/...
 
 vet:
 	go vet ./...
