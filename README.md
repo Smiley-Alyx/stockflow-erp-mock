@@ -7,10 +7,27 @@ and exposes an HTTP interface for health checks and local administration.
 ## Local run
 
 ```bash
-go run ./cmd/stockflow-erp-mock
+make run
 ```
 
 The HTTP server listens on `:8080` by default.
+
+## Docker Compose
+
+Start the service with a local RabbitMQ instance:
+
+```bash
+make docker-up
+```
+
+The RabbitMQ management UI is available at `http://localhost:15672`.
+Use `stockflow` as both username and password for the local environment.
+
+Stop the containers:
+
+```bash
+make docker-down
+```
 
 ## Configuration
 
@@ -26,4 +43,3 @@ The HTTP server listens on `:8080` by default.
 | --- | --- | --- |
 | `GET` | `/health` | Liveness probe |
 | `GET` | `/ready` | Readiness probe |
-

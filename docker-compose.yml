@@ -1,0 +1,32 @@
+services:
+  erp-mock:
+    build:
+      context: .
+    environment:
+      ERP_HTTP_ADDRESS: ":8080"
+      ERP_LOG_LEVEL: info
+      ERP_SHUTDOWN_TIMEOUT: 10s
+    ports:
+      - "8080:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: stockflow
+      RABBITMQ_DEFAULT_PASS: stockflow
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+volumes:
+  rabbitmq-data:

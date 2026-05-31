@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"github.com/Smiley-Alyx/stockflow-erp-mock/internal/config"
-	"github.com/Smiley-Alyx/stockflow-erp-mock/internal/httpserver"
+	httpapi "github.com/Smiley-Alyx/stockflow-erp-mock/internal/http"
 )
 
 func main() {
@@ -25,7 +25,7 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	server := httpserver.New(cfg.HTTPAddress, logger)
+	server := httpapi.New(cfg.HTTPAddress, logger)
 	server.SetReady(true)
 
 	serverErrors := make(chan error, 1)
