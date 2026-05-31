@@ -73,11 +73,18 @@ func (a *Admin) DLQDepth(ctx context.Context) (map[app.DeadLetterQueue]int, erro
 			return nil, err
 		}
 
-		inspection, err := a.channel.QueueInspect(config.name)
+		declaredQueue, err := a.channel.QueueDeclare(
+			config.name,
+			true,
+			false,
+			false,
+			true,
+			nil,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("inspect RabbitMQ dead-letter queue %q: %w", config.name, err)
 		}
-		depth[queue] = inspection.Messages
+		depth[queue] = declaredQueue.Messages
 	}
 
 	return depth, nil

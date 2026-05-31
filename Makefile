@@ -1,4 +1,4 @@
-.PHONY: build docker-down docker-up fmt run test test-integration vet
+.PHONY: build docker-down docker-up fmt lint run test test-integration vet
 
 build:
 	mkdir -p bin
@@ -15,6 +15,9 @@ test:
 
 test-integration:
 	go test -tags=integration -count=1 -timeout=5m ./internal/messaging/rabbitmq/...
+
+lint:
+	golangci-lint run ./...
 
 vet:
 	go vet ./...
