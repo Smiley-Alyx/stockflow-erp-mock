@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "inventory.reservation.release_failed.v1.schema.json",
+  "title": "Inventory reservation release failed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reservation_id",
+    "reason"
+  ],
+  "properties": {
+    "reservation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "RESERVATION_NOT_FOUND",
+        "RESERVATION_NOT_ACTIVE",
+        "INVALID_REQUEST"
+      ]
+    },
+    "details": {
+      "type": "string",
+      "maxLength": 1000
+    }
+  },
+  "examples": [
+    {
+      "reservation_id": "res-10001",
+      "reason": "RESERVATION_NOT_FOUND",
+      "details": "Reservation does not exist."
+    }
+  ]
+}

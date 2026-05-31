@@ -1,0 +1,317 @@
+asyncapi: 2.6.0
+id: urn:stockflow:erp-mock:inventory
+info:
+  title: Stockflow ERP Mock Inventory API
+  version: 1.0.0
+  description: |
+    Asynchronous contract for sandbox inventory reservation flows between the
+    marketplace and the ERP mock service.
+  contact:
+    name: Alexandra Shornikova
+    url: https://github.com/Smiley-Alyx/stockflow-erp-mock
+    email: smiley-alyx@yandex.ru
+  license:
+    name: Proprietary
+defaultContentType: application/json
+tags:
+  - name: inventory
+    description: Inventory reservation and release flows.
+servers:
+  local:
+    url: rabbitmq:5672
+    protocol: amqp
+    protocolVersion: 0.9.1
+    description: Local RabbitMQ broker started with Docker Compose.
+    security:
+      - userPassword: []
+channels:
+  inventory.reservation.requested.v1:
+    description: Requests creation of an inventory reservation for one SKU.
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: stockflow.inventory
+          type: topic
+          durable: true
+          autoDelete: false
+        bindingVersion: 0.2.0
+    subscribe:
+      operationId: consumeInventoryReservationRequestedV1
+      message:
+        $ref: '#/components/messages/InventoryReservationRequestedV1'
+  inventory.reservation.release.requested.v1:
+    description: Requests release of an active inventory reservation.
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: stockflow.inventory
+          type: topic
+          durable: true
+          autoDelete: false
+        bindingVersion: 0.2.0
+    subscribe:
+      operationId: consumeInventoryReservationReleaseRequestedV1
+      message:
+        $ref: '#/components/messages/InventoryReservationReleaseRequestedV1'
+  inventory.reservation.confirmed.v1:
+    description: Confirms that inventory stock has been reserved.
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: stockflow.inventory
+          type: topic
+          durable: true
+          autoDelete: false
+        bindingVersion: 0.2.0
+    publish:
+      operationId: publishInventoryReservationConfirmedV1
+      message:
+        $ref: '#/components/messages/InventoryReservationConfirmedV1'
+  inventory.reservation.rejected.v1:
+    description: Rejects an inventory reservation request.
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: stockflow.inventory
+          type: topic
+          durable: true
+          autoDelete: false
+        bindingVersion: 0.2.0
+    publish:
+      operationId: publishInventoryReservationRejectedV1
+      message:
+        $ref: '#/components/messages/InventoryReservationRejectedV1'
+  inventory.reservation.released.v1:
+    description: Confirms that an inventory reservation has been released.
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: stockflow.inventory
+          type: topic
+          durable: true
+          autoDelete: false
+        bindingVersion: 0.2.0
+    publish:
+      operationId: publishInventoryReservationReleasedV1
+      message:
+        $ref: '#/components/messages/InventoryReservationReleasedV1'
+  inventory.reservation.release_failed.v1:
+    description: Reports that an inventory reservation could not be released.
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: stockflow.inventory
+          type: topic
+          durable: true
+          autoDelete: false
+        bindingVersion: 0.2.0
+    publish:
+      operationId: publishInventoryReservationReleaseFailedV1
+      message:
+        $ref: '#/components/messages/InventoryReservationReleaseFailedV1'
+components:
+  securitySchemes:
+    userPassword:
+      type: userPassword
+      description: RabbitMQ credentials provided through environment variables.
+  schemas:
+    InventoryMessageHeaders:
+      type: object
+      additionalProperties: false
+      required:
+        - message_id
+        - correlation_id
+        - causation_id
+        - idempotency_key
+        - occurred_at
+        - schema_version
+        - retry_count
+      properties:
+        message_id:
+          type: string
+          format: uuid
+          description: Unique identifier of this message.
+        correlation_id:
+          type: string
+          format: uuid
+          description: Identifier shared by all messages in the integration flow.
+        causation_id:
+          type: string
+          format: uuid
+          description: Identifier of the message or command that caused this message.
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Stable key used to deduplicate message processing.
+        occurred_at:
+          type: string
+          format: date-time
+          description: UTC timestamp when the message was created.
+        schema_version:
+          type: integer
+          enum:
+            - 1
+          description: Version of the message payload schema.
+        retry_count:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Number of previous processing attempts.
+  messageTraits:
+    InventoryMessage:
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/InventoryMessageHeaders'
+      correlationId:
+        description: Correlates messages that belong to the same reservation flow.
+        location: '$message.header#/correlation_id'
+  messages:
+    InventoryReservationRequestedV1:
+      name: inventory.reservation.requested.v1
+      messageId: inventory.reservation.requested.v1
+      title: Inventory reservation requested
+      summary: Requests stock reservation for one SKU.
+      traits:
+        - $ref: '#/components/messageTraits/InventoryMessage'
+      payload:
+        $ref: './messages/inventory.reservation.requested.v1.schema.json'
+      examples:
+        - name: reserve-stock
+          headers:
+            message_id: 58d867f6-69e0-4f2f-b1ee-d587aaa48b6e
+            correlation_id: bb8d8f75-5210-4038-98cc-f2237d192ff8
+            causation_id: fa6c60fa-6f72-4d96-9e40-8fc997d72f1e
+            idempotency_key: reservation:res-10001:create
+            occurred_at: '2026-05-31T09:00:00Z'
+            schema_version: 1
+            retry_count: 0
+          payload:
+            reservation_id: res-10001
+            order_id: ord-10001
+            sku: sku-red-mug
+            quantity: 2
+    InventoryReservationReleaseRequestedV1:
+      name: inventory.reservation.release.requested.v1
+      messageId: inventory.reservation.release.requested.v1
+      title: Inventory reservation release requested
+      summary: Requests release of an active stock reservation.
+      traits:
+        - $ref: '#/components/messageTraits/InventoryMessage'
+      payload:
+        $ref: './messages/inventory.reservation.release_requested.v1.schema.json'
+      examples:
+        - name: release-stock
+          headers:
+            message_id: 7c6fd9ac-b083-4f79-a1ab-5858637be6af
+            correlation_id: bb8d8f75-5210-4038-98cc-f2237d192ff8
+            causation_id: 58d867f6-69e0-4f2f-b1ee-d587aaa48b6e
+            idempotency_key: reservation:res-10001:release
+            occurred_at: '2026-05-31T09:10:00Z'
+            schema_version: 1
+            retry_count: 0
+          payload:
+            reservation_id: res-10001
+            reason: order_cancelled
+    InventoryReservationConfirmedV1:
+      name: inventory.reservation.confirmed.v1
+      messageId: inventory.reservation.confirmed.v1
+      title: Inventory reservation confirmed
+      summary: Confirms a successful stock reservation.
+      traits:
+        - $ref: '#/components/messageTraits/InventoryMessage'
+      payload:
+        $ref: './messages/inventory.reservation.confirmed.v1.schema.json'
+      examples:
+        - name: stock-reserved
+          headers:
+            message_id: 3e1b4ca3-d256-49db-915a-b93807cc4e88
+            correlation_id: bb8d8f75-5210-4038-98cc-f2237d192ff8
+            causation_id: 58d867f6-69e0-4f2f-b1ee-d587aaa48b6e
+            idempotency_key: reservation:res-10001:create:confirmed
+            occurred_at: '2026-05-31T09:00:01Z'
+            schema_version: 1
+            retry_count: 0
+          payload:
+            reservation_id: res-10001
+            order_id: ord-10001
+            sku: sku-red-mug
+            quantity: 2
+            reserved_at: '2026-05-31T09:00:01Z'
+    InventoryReservationRejectedV1:
+      name: inventory.reservation.rejected.v1
+      messageId: inventory.reservation.rejected.v1
+      title: Inventory reservation rejected
+      summary: Reports that stock could not be reserved.
+      traits:
+        - $ref: '#/components/messageTraits/InventoryMessage'
+      payload:
+        $ref: './messages/inventory.reservation.rejected.v1.schema.json'
+      examples:
+        - name: insufficient-stock
+          headers:
+            message_id: 8d4d7046-8d5f-463b-b25d-e12d44611124
+            correlation_id: bb8d8f75-5210-4038-98cc-f2237d192ff8
+            causation_id: 58d867f6-69e0-4f2f-b1ee-d587aaa48b6e
+            idempotency_key: reservation:res-10001:create:rejected
+            occurred_at: '2026-05-31T09:00:01Z'
+            schema_version: 1
+            retry_count: 0
+          payload:
+            reservation_id: res-10001
+            order_id: ord-10001
+            sku: sku-red-mug
+            quantity: 200
+            reason: INSUFFICIENT_STOCK
+            details: Requested quantity exceeds available stock.
+    InventoryReservationReleasedV1:
+      name: inventory.reservation.released.v1
+      messageId: inventory.reservation.released.v1
+      title: Inventory reservation released
+      summary: Confirms a successful stock reservation release.
+      traits:
+        - $ref: '#/components/messageTraits/InventoryMessage'
+      payload:
+        $ref: './messages/inventory.reservation.released.v1.schema.json'
+      examples:
+        - name: stock-released
+          headers:
+            message_id: 657e4ce2-95ef-405e-a7ed-67b5a65395b0
+            correlation_id: bb8d8f75-5210-4038-98cc-f2237d192ff8
+            causation_id: 7c6fd9ac-b083-4f79-a1ab-5858637be6af
+            idempotency_key: reservation:res-10001:release:released
+            occurred_at: '2026-05-31T09:10:01Z'
+            schema_version: 1
+            retry_count: 0
+          payload:
+            reservation_id: res-10001
+            released_at: '2026-05-31T09:10:01Z'
+    InventoryReservationReleaseFailedV1:
+      name: inventory.reservation.release_failed.v1
+      messageId: inventory.reservation.release_failed.v1
+      title: Inventory reservation release failed
+      summary: Reports that stock reservation release failed.
+      traits:
+        - $ref: '#/components/messageTraits/InventoryMessage'
+      payload:
+        $ref: './messages/inventory.reservation.release_failed.v1.schema.json'
+      examples:
+        - name: reservation-not-found
+          headers:
+            message_id: 987f80c0-b2ac-42cb-bbac-c91e55c66999
+            correlation_id: bb8d8f75-5210-4038-98cc-f2237d192ff8
+            causation_id: 7c6fd9ac-b083-4f79-a1ab-5858637be6af
+            idempotency_key: reservation:res-10001:release:failed
+            occurred_at: '2026-05-31T09:10:01Z'
+            schema_version: 1
+            retry_count: 0
+          payload:
+            reservation_id: res-10001
+            reason: RESERVATION_NOT_FOUND
+            details: Reservation does not exist.

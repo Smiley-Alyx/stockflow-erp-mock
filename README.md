@@ -12,6 +12,12 @@ make run
 
 The HTTP server listens on `:8080` by default.
 
+## AsyncAPI contract
+
+The versioned RabbitMQ integration contract is available in
+[`contracts/asyncapi.yaml`](contracts/asyncapi.yaml). Payload schemas are stored
+in [`contracts/messages`](contracts/messages).
+
 ## Docker Compose
 
 Start the service with a local RabbitMQ instance:

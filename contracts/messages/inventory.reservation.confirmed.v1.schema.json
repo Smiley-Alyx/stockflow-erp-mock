@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "inventory.reservation.confirmed.v1.schema.json",
+  "title": "Inventory reservation confirmed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reservation_id",
+    "order_id",
+    "sku",
+    "quantity",
+    "reserved_at"
+  ],
+  "properties": {
+    "reservation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "order_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "sku": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "reserved_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "examples": [
+    {
+      "reservation_id": "res-10001",
+      "order_id": "ord-10001",
+      "sku": "sku-red-mug",
+      "quantity": 2,
+      "reserved_at": "2026-05-31T09:00:01Z"
+    }
+  ]
+}

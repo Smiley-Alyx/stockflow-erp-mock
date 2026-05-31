@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "inventory.reservation.released.v1.schema.json",
+  "title": "Inventory reservation released v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reservation_id",
+    "released_at"
+  ],
+  "properties": {
+    "reservation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "released_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "examples": [
+    {
+      "reservation_id": "res-10001",
+      "released_at": "2026-05-31T09:10:01Z"
+    }
+  ]
+}
