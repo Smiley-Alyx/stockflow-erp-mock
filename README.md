@@ -43,3 +43,8 @@ make docker-down
 | --- | --- | --- |
 | `GET` | `/health` | Liveness probe |
 | `GET` | `/ready` | Readiness probe |
+| `GET` | `/stock` | List available and reserved stock |
+| `POST` | `/stock` | Create or update available stock |
+| `GET` | `/reservations` | List reservations |
+| `GET` | `/reservations/{id}` | Get a reservation |
+| `POST` | `/debug/failure-mode` | Configure a sandbox failure mode |

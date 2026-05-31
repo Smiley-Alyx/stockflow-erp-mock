@@ -9,8 +9,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/Smiley-Alyx/stockflow-erp-mock/internal/app"
 	"github.com/Smiley-Alyx/stockflow-erp-mock/internal/config"
+	"github.com/Smiley-Alyx/stockflow-erp-mock/internal/domain/inventory"
 	httpapi "github.com/Smiley-Alyx/stockflow-erp-mock/internal/http"
+	"github.com/Smiley-Alyx/stockflow-erp-mock/internal/storage/memory"
 )
 
 func main() {
@@ -25,7 +28,18 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	server := httpapi.New(cfg.HTTPAddress, logger)
+	inventoryRepository, err := memory.NewInventoryRepository(inventory.NewService(), memory.DefaultStockSeed())
+	if err != nil {
+		logger.Error("initialize inventory repository", "error", err)
+		os.Exit(1)
+	}
+
+	server := httpapi.New(
+		cfg.HTTPAddress,
+		logger,
+		inventoryRepository,
+		app.NewFailureModeController(),
+	)
 	server.SetReady(true)
 
 	serverErrors := make(chan error, 1)
