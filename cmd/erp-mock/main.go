@@ -72,10 +72,11 @@ func run() int {
 	defer cancelConsumer()
 
 	consumerErrors := make(chan error, 1)
+	idempotencyStore := memory.NewIdempotencyStore[app.ReservationResult]()
 	go func() {
 		consumerErrors <- rabbitMQConsumer.Consume(
 			consumerContext,
-			app.NewInventoryReservationHandler(inventoryRepository),
+			app.NewInventoryReservationHandler(inventoryRepository, idempotencyStore),
 			rabbitMQPublisher,
 		)
 	}()

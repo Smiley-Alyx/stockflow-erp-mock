@@ -212,6 +212,7 @@ func (c *Consumer) handleDelivery(
 		"correlation_id", request.Metadata.CorrelationID,
 		"reservation_id", request.ReservationID,
 		"decision", result.Decision,
+		"idempotency_hit", result.IdempotencyHit,
 	)
 
 	if err := delivery.Ack(false); err != nil {
@@ -223,7 +224,8 @@ func (c *Consumer) handleDelivery(
 
 func isPermanentHandlerError(err error) bool {
 	return errors.Is(err, inventory.ErrInvalidArgument) ||
-		errors.Is(err, inventory.ErrReservationAlreadyExists)
+		errors.Is(err, inventory.ErrReservationAlreadyExists) ||
+		errors.Is(err, app.ErrIdempotencyConflict)
 }
 
 func nack(delivery amqp.Delivery, requeue bool) error {
