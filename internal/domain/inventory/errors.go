@@ -6,10 +6,13 @@ import (
 )
 
 var (
-	ErrInvalidArgument         = errors.New("invalid argument")
-	ErrInsufficientStock       = errors.New("insufficient stock")
-	ErrReservationNotActive    = errors.New("reservation is not active")
-	ErrStockInvariantViolation = errors.New("stock invariant violation")
+	ErrInvalidArgument          = errors.New("invalid argument")
+	ErrInsufficientStock        = errors.New("insufficient stock")
+	ErrReservationAlreadyExists = errors.New("reservation already exists")
+	ErrReservationNotFound      = errors.New("reservation not found")
+	ErrReservationNotActive     = errors.New("reservation is not active")
+	ErrStockItemNotFound        = errors.New("stock item not found")
+	ErrStockInvariantViolation  = errors.New("stock invariant violation")
 )
 
 type InsufficientStockError struct {
