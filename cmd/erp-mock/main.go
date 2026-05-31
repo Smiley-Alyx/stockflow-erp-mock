@@ -14,6 +14,7 @@ import (
 	"github.com/Smiley-Alyx/stockflow-erp-mock/internal/domain/inventory"
 	httpapi "github.com/Smiley-Alyx/stockflow-erp-mock/internal/http"
 	"github.com/Smiley-Alyx/stockflow-erp-mock/internal/messaging/rabbitmq"
+	"github.com/Smiley-Alyx/stockflow-erp-mock/internal/observability"
 	"github.com/Smiley-Alyx/stockflow-erp-mock/internal/storage/memory"
 )
 
@@ -70,6 +71,27 @@ func run() int {
 		}
 	}()
 
+	rabbitMQAdmin, err := rabbitmq.NewAdmin(rabbitmq.PublisherConfig{
+		URL:            cfg.RabbitMQURL,
+		PublishTimeout: cfg.RabbitMQPublishTimeout,
+	})
+	if err != nil {
+		logger.Error("initialize RabbitMQ admin", "error", err)
+		return 1
+	}
+	defer func() {
+		if err := rabbitMQAdmin.Close(); err != nil {
+			logger.Error("close RabbitMQ admin", "error", err)
+		}
+	}()
+
+	metrics, err := observability.New(inventoryRepository, rabbitMQAdmin)
+	if err != nil {
+		logger.Error("initialize metrics", "error", err)
+		return 1
+	}
+	rabbitMQConsumer.SetMetrics(metrics)
+
 	consumerContext, cancelConsumer := context.WithCancel(context.Background())
 	defer cancelConsumer()
 
@@ -90,6 +112,8 @@ func run() int {
 		logger,
 		inventoryRepository,
 		app.NewFailureModeController(),
+		metrics.Handler(),
+		rabbitMQAdmin,
 	)
 	server.SetReady(true)
 
@@ -128,6 +152,10 @@ func run() int {
 	}
 	if err := rabbitMQPublisher.Close(); err != nil {
 		logger.Error("close RabbitMQ publisher", "error", err)
+		return 1
+	}
+	if err := rabbitMQAdmin.Close(); err != nil {
+		logger.Error("close RabbitMQ admin", "error", err)
 		return 1
 	}
 

@@ -172,6 +172,37 @@ func TestSetFailureModeRejectsInvalidSettings(t *testing.T) {
 	}
 }
 
+func TestMetrics(t *testing.T) {
+	server, _ := newTestServer(t, nil)
+	recorder := httptest.NewRecorder()
+
+	server.httpServer.Handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if body := recorder.Body.String(); body != "test_metric 1\n" {
+		t.Errorf("body = %q, want test metric", body)
+	}
+}
+
+func TestRequeueDeadLetters(t *testing.T) {
+	server, _ := newTestServer(t, nil)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/debug/dlq/requeue", bytes.NewBufferString(
+		`{"queue":"reservation_requests","limit":10}`,
+	))
+
+	server.httpServer.Handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if body := recorder.Body.String(); body != "{\"requeued_messages\":2}\n" {
+		t.Errorf("body = %q", body)
+	}
+}
+
 func newTestServer(t *testing.T, seed []memory.StockSeed) (*Server, *memory.InventoryRepository) {
 	t.Helper()
 
@@ -180,9 +211,30 @@ func newTestServer(t *testing.T, seed []memory.StockSeed) (*Server, *memory.Inve
 		t.Fatalf("NewInventoryRepository() error = %v", err)
 	}
 
-	return New(":8080", discardLogger(), repository, app.NewFailureModeController()), repository
+	metricsHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "test_metric 1\n")
+	})
+
+	return New(
+		":8080",
+		discardLogger(),
+		repository,
+		app.NewFailureModeController(),
+		metricsHandler,
+		fakeDeadLetterAdmin{},
+	), repository
 }
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+type fakeDeadLetterAdmin struct{}
+
+func (fakeDeadLetterAdmin) DLQDepth(context.Context) (map[app.DeadLetterQueue]int, error) {
+	return map[app.DeadLetterQueue]int{}, nil
+}
+
+func (fakeDeadLetterAdmin) RequeueDeadLetters(context.Context, app.DeadLetterQueue, int) (int, error) {
+	return 2, nil
 }

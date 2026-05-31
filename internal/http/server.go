@@ -21,6 +21,7 @@ type Server struct {
 	httpServer          *http.Server
 	inventoryRepository inventory.Repository
 	failureModes        *app.FailureModeController
+	deadLetterAdmin     app.DeadLetterAdmin
 	ready               atomic.Bool
 }
 
@@ -68,6 +69,15 @@ type failureModeResponse struct {
 	ProcessingDelayMS       int64           `json:"processing_delay_ms,omitempty"`
 }
 
+type requeueDeadLettersRequest struct {
+	Queue app.DeadLetterQueue `json:"queue"`
+	Limit int                 `json:"limit"`
+}
+
+type requeueDeadLettersResponse struct {
+	RequeuedMessages int `json:"requeued_messages"`
+}
+
 type errorResponse struct {
 	Error apiError `json:"error"`
 }
@@ -82,10 +92,13 @@ func New(
 	logger *slog.Logger,
 	inventoryRepository inventory.Repository,
 	failureModes *app.FailureModeController,
+	metricsHandler http.Handler,
+	deadLetterAdmin app.DeadLetterAdmin,
 ) *Server {
 	server := &Server{
 		inventoryRepository: inventoryRepository,
 		failureModes:        failureModes,
+		deadLetterAdmin:     deadLetterAdmin,
 	}
 
 	mux := http.NewServeMux()
@@ -95,7 +108,9 @@ func New(
 	mux.HandleFunc("POST /stock", server.handleSetStock)
 	mux.HandleFunc("GET /reservations", server.handleListReservations)
 	mux.HandleFunc("GET /reservations/{id}", server.handleGetReservation)
+	mux.Handle("GET /metrics", metricsHandler)
 	mux.HandleFunc("POST /debug/failure-mode", server.handleSetFailureMode)
+	mux.HandleFunc("POST /debug/dlq/requeue", server.handleRequeueDeadLetters)
 
 	server.httpServer = &http.Server{
 		Addr:    address,
@@ -103,6 +118,22 @@ func New(
 	}
 
 	return server
+}
+
+func (s *Server) handleRequeueDeadLetters(w http.ResponseWriter, r *http.Request) {
+	var request requeueDeadLettersRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeError(w, err)
+		return
+	}
+
+	requeuedMessages, err := s.deadLetterAdmin.RequeueDeadLetters(r.Context(), request.Queue, request.Limit)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, requeueDeadLettersResponse{RequeuedMessages: requeuedMessages})
 }
 
 func (s *Server) ListenAndServe() error {
@@ -261,7 +292,9 @@ func writeError(w http.ResponseWriter, err error) {
 	code := "internal_error"
 
 	switch {
-	case errors.Is(err, inventory.ErrInvalidArgument):
+	case errors.Is(err, inventory.ErrInvalidArgument),
+		errors.Is(err, app.ErrInvalidDeadLetterQueue),
+		errors.Is(err, app.ErrInvalidRequeueLimit):
 		status = http.StatusBadRequest
 		code = "invalid_argument"
 	case errors.Is(err, inventory.ErrStockItemNotFound), errors.Is(err, inventory.ErrReservationNotFound):

@@ -57,6 +57,15 @@ uses a fixed TTL and dead-letters messages back to the main inventory exchange.
 Malformed messages and messages that exhaust retries are routed to
 `stockflow.erp-mock.inventory.reservation.requested.v1.dlq`.
 The reservation release queue uses the same retry and dead-letter policy.
+Dead-letter messages can be returned to processing manually through the HTTP
+admin endpoint. Requeue limits are bounded to keep local administration
+operations predictable.
+
+## Metrics
+
+The Prometheus endpoint exposes message processing counters and duration,
+reservation outcome counters, idempotency hits, current stock, active
+reservations, and dead-letter queue depth.
 
 ## HTTP endpoints
 
@@ -64,8 +73,13 @@ The reservation release queue uses the same retry and dead-letter policy.
 | --- | --- | --- |
 | `GET` | `/health` | Liveness probe |
 | `GET` | `/ready` | Readiness probe |
+| `GET` | `/metrics` | Prometheus metrics |
 | `GET` | `/stock` | List available and reserved stock |
 | `POST` | `/stock` | Create or update available stock |
 | `GET` | `/reservations` | List reservations |
 | `GET` | `/reservations/{id}` | Get a reservation |
 | `POST` | `/debug/failure-mode` | Configure a sandbox failure mode |
+| `POST` | `/debug/dlq/requeue` | Requeue bounded dead-letter messages |
+
+The DLQ requeue endpoint accepts one of the logical queue names:
+`reservation_requests` or `reservation_release_requests`.

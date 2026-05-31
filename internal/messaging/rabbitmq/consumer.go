@@ -41,8 +41,20 @@ type Consumer struct {
 	consumerTag   string
 	logger        *slog.Logger
 	maxRetryCount int
+	metrics       ConsumerMetrics
 	closeOnce     sync.Once
 }
+
+type ConsumerMetrics interface {
+	ObserveProcessed(messageType, outcome string, duration time.Duration)
+	IncrementFailed(messageType, reason string)
+	IncrementRejectedReservation()
+	IncrementConfirmedReservation()
+	IncrementReleasedReservation()
+	IncrementIdempotencyHit()
+}
+
+type noopConsumerMetrics struct{}
 
 type ReservationResultPublisher interface {
 	PublishReservationResult(ctx context.Context, result app.ReservationResult) error
@@ -50,6 +62,13 @@ type ReservationResultPublisher interface {
 	PublishRetry(ctx context.Context, delivery amqp.Delivery, routingKey string, retryCount int) error
 	PublishDeadLetter(ctx context.Context, delivery amqp.Delivery, routingKey string, retryCount int) error
 }
+
+func (noopConsumerMetrics) ObserveProcessed(string, string, time.Duration) {}
+func (noopConsumerMetrics) IncrementFailed(string, string)                 {}
+func (noopConsumerMetrics) IncrementRejectedReservation()                  {}
+func (noopConsumerMetrics) IncrementConfirmedReservation()                 {}
+func (noopConsumerMetrics) IncrementReleasedReservation()                  {}
+func (noopConsumerMetrics) IncrementIdempotencyHit()                       {}
 
 func NewConsumer(config ConsumerConfig, logger *slog.Logger) (*Consumer, error) {
 	connection, err := amqp.Dial(config.URL)
@@ -76,6 +95,10 @@ func NewConsumer(config ConsumerConfig, logger *slog.Logger) (*Consumer, error) 
 	}
 
 	return consumer, nil
+}
+
+func (c *Consumer) SetMetrics(metrics ConsumerMetrics) {
+	c.metrics = metrics
 }
 
 func (c *Consumer) Consume(
@@ -302,9 +325,11 @@ func (c *Consumer) handleDelivery(
 	handler app.ReservationRequestHandler,
 	publisher ReservationResultPublisher,
 ) error {
+	startedAt := time.Now()
 	request, err := decodeReservationRequested(delivery)
 	if err != nil {
 		c.logger.Warn("reject invalid RabbitMQ message", "error", err)
+		c.observeFailure(ReservationRequestedRoutingKey, "invalid_message", startedAt)
 		return nack(delivery, false)
 	}
 
@@ -317,6 +342,7 @@ func (c *Consumer) handleDelivery(
 			"reservation_id", request.ReservationID,
 			"error", err,
 		)
+		c.observeFailure(ReservationRequestedRoutingKey, "handler_error", startedAt)
 
 		if isPermanentHandlerError(err) {
 			return nack(delivery, false)
@@ -334,6 +360,7 @@ func (c *Consumer) handleDelivery(
 			"decision", result.Decision,
 			"error", err,
 		)
+		c.observeFailure(ReservationRequestedRoutingKey, "publisher_error", startedAt)
 
 		return c.retryOrDeadLetter(ctx, delivery, ReservationRequestedRoutingKey, request.Metadata.RetryCount, publisher)
 	}
@@ -346,6 +373,16 @@ func (c *Consumer) handleDelivery(
 		"decision", result.Decision,
 		"idempotency_hit", result.IdempotencyHit,
 	)
+	c.consumerMetrics().ObserveProcessed(ReservationRequestedRoutingKey, string(result.Decision), time.Since(startedAt))
+	switch result.Decision {
+	case app.ReservationDecisionConfirmed:
+		c.consumerMetrics().IncrementConfirmedReservation()
+	case app.ReservationDecisionRejected:
+		c.consumerMetrics().IncrementRejectedReservation()
+	}
+	if result.IdempotencyHit {
+		c.consumerMetrics().IncrementIdempotencyHit()
+	}
 
 	return ack(delivery)
 }
@@ -356,9 +393,11 @@ func (c *Consumer) handleReleaseDelivery(
 	handler app.ReservationReleaseRequestHandler,
 	publisher ReservationResultPublisher,
 ) error {
+	startedAt := time.Now()
 	request, err := decodeReservationReleaseRequested(delivery)
 	if err != nil {
 		c.logger.Warn("reject invalid RabbitMQ release message", "error", err)
+		c.observeFailure(ReservationReleaseRequestedRoutingKey, "invalid_message", startedAt)
 		return nack(delivery, false)
 	}
 
@@ -371,6 +410,7 @@ func (c *Consumer) handleReleaseDelivery(
 			"reservation_id", request.ReservationID,
 			"error", err,
 		)
+		c.observeFailure(ReservationReleaseRequestedRoutingKey, "handler_error", startedAt)
 
 		if isPermanentHandlerError(err) {
 			return nack(delivery, false)
@@ -394,6 +434,7 @@ func (c *Consumer) handleReleaseDelivery(
 			"decision", result.Decision,
 			"error", err,
 		)
+		c.observeFailure(ReservationReleaseRequestedRoutingKey, "publisher_error", startedAt)
 
 		return c.retryOrDeadLetter(
 			ctx,
@@ -412,8 +453,32 @@ func (c *Consumer) handleReleaseDelivery(
 		"decision", result.Decision,
 		"idempotency_hit", result.IdempotencyHit,
 	)
+	c.consumerMetrics().ObserveProcessed(
+		ReservationReleaseRequestedRoutingKey,
+		string(result.Decision),
+		time.Since(startedAt),
+	)
+	if result.Decision == app.ReservationReleaseDecisionReleased {
+		c.consumerMetrics().IncrementReleasedReservation()
+	}
+	if result.IdempotencyHit {
+		c.consumerMetrics().IncrementIdempotencyHit()
+	}
 
 	return ack(delivery)
+}
+
+func (c *Consumer) observeFailure(messageType, reason string, startedAt time.Time) {
+	c.consumerMetrics().IncrementFailed(messageType, reason)
+	c.consumerMetrics().ObserveProcessed(messageType, "failed", time.Since(startedAt))
+}
+
+func (c *Consumer) consumerMetrics() ConsumerMetrics {
+	if c.metrics == nil {
+		return noopConsumerMetrics{}
+	}
+
+	return c.metrics
 }
 
 func (c *Consumer) retryOrDeadLetter(

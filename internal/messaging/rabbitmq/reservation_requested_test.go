@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/Smiley-Alyx/stockflow-erp-mock/internal/app"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -82,7 +83,8 @@ func TestConsumerHandleDeliveryAcknowledgesProcessedMessage(t *testing.T) {
 	delivery := validDelivery()
 	delivery.Acknowledger = acknowledger
 	delivery.DeliveryTag = 1
-	consumer := &Consumer{logger: discardLogger()}
+	metrics := &recordingConsumerMetrics{}
+	consumer := &Consumer{logger: discardLogger(), metrics: metrics}
 
 	publisher := &reservationResultPublisherStub{}
 
@@ -96,6 +98,15 @@ func TestConsumerHandleDeliveryAcknowledgesProcessedMessage(t *testing.T) {
 	}
 	if publisher.published != 1 {
 		t.Errorf("published = %d, want %d", publisher.published, 1)
+	}
+	if metrics.processed != 1 {
+		t.Errorf("processed = %d, want %d", metrics.processed, 1)
+	}
+	if metrics.outcome != string(app.ReservationDecisionConfirmed) {
+		t.Errorf("outcome = %q, want %q", metrics.outcome, app.ReservationDecisionConfirmed)
+	}
+	if metrics.confirmed != 1 {
+		t.Errorf("confirmed = %d, want %d", metrics.confirmed, 1)
 	}
 }
 
@@ -267,6 +278,32 @@ type recordingAcknowledger struct {
 	nacked  int
 	requeue bool
 }
+
+type recordingConsumerMetrics struct {
+	processed int
+	failed    int
+	confirmed int
+	outcome   string
+}
+
+func (m *recordingConsumerMetrics) ObserveProcessed(_ string, outcome string, _ time.Duration) {
+	m.processed++
+	m.outcome = outcome
+}
+
+func (m *recordingConsumerMetrics) IncrementFailed(string, string) {
+	m.failed++
+}
+
+func (m *recordingConsumerMetrics) IncrementRejectedReservation() {}
+
+func (m *recordingConsumerMetrics) IncrementConfirmedReservation() {
+	m.confirmed++
+}
+
+func (m *recordingConsumerMetrics) IncrementReleasedReservation() {}
+
+func (m *recordingConsumerMetrics) IncrementIdempotencyHit() {}
 
 func (a *recordingAcknowledger) Ack(_ uint64, _ bool) error {
 	a.acked++
