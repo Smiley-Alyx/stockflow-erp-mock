@@ -14,8 +14,10 @@ import (
 )
 
 const (
-	ReservationConfirmedRoutingKey = "inventory.reservation.confirmed.v1"
-	ReservationRejectedRoutingKey  = "inventory.reservation.rejected.v1"
+	ReservationConfirmedRoutingKey     = "inventory.reservation.confirmed.v1"
+	ReservationRejectedRoutingKey      = "inventory.reservation.rejected.v1"
+	ReservationReleasedRoutingKey      = "inventory.reservation.released.v1"
+	ReservationReleaseFailedRoutingKey = "inventory.reservation.release_failed.v1"
 )
 
 type PublisherConfig struct {
@@ -77,22 +79,103 @@ func (p *Publisher) PublishReservationResult(ctx context.Context, result app.Res
 	return p.publishWithConfirmation(ctx, InventoryExchangeName, routingKey, publishing)
 }
 
-func (p *Publisher) PublishRetry(ctx context.Context, delivery amqp.Delivery, retryCount int) error {
+func (p *Publisher) PublishReservationReleaseResult(ctx context.Context, result app.ReservationReleaseResult) error {
+	messageID, err := newUUID()
+	if err != nil {
+		return fmt.Errorf("generate message ID: %w", err)
+	}
+
+	occurredAt := time.Now().UTC()
+	routingKey, publishing, err := newReservationReleaseResultMessage(result, messageID, occurredAt)
+	if err != nil {
+		return err
+	}
+
+	return p.publishWithConfirmation(ctx, InventoryExchangeName, routingKey, publishing)
+}
+
+func (p *Publisher) PublishRetry(
+	ctx context.Context,
+	delivery amqp.Delivery,
+	routingKey string,
+	retryCount int,
+) error {
 	return p.publishWithConfirmation(
 		ctx,
 		InventoryRetryExchangeName,
-		ReservationRequestedRoutingKey,
+		routingKey,
 		newForwardedDelivery(delivery, retryCount),
 	)
 }
 
-func (p *Publisher) PublishDeadLetter(ctx context.Context, delivery amqp.Delivery, retryCount int) error {
+func (p *Publisher) PublishDeadLetter(
+	ctx context.Context,
+	delivery amqp.Delivery,
+	routingKey string,
+	retryCount int,
+) error {
 	return p.publishWithConfirmation(
 		ctx,
 		InventoryDeadLetterExchangeName,
-		ReservationRequestedRoutingKey,
+		routingKey,
 		newForwardedDelivery(delivery, retryCount),
 	)
+}
+
+func newReservationReleaseResultMessage(
+	result app.ReservationReleaseResult,
+	messageID string,
+	occurredAt time.Time,
+) (string, amqp.Publishing, error) {
+	routingKey, payload, err := reservationReleaseResultPayload(result)
+	if err != nil {
+		return "", amqp.Publishing{}, err
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", amqp.Publishing{}, fmt.Errorf("marshal reservation release result payload: %w", err)
+	}
+
+	return routingKey, amqp.Publishing{
+		Headers: amqp.Table{
+			"message_id":      messageID,
+			"correlation_id":  result.Request.Metadata.CorrelationID,
+			"causation_id":    result.Request.Metadata.MessageID,
+			"idempotency_key": result.Request.Metadata.IdempotencyKey + ":" + string(result.Decision),
+			"occurred_at":     occurredAt.Format(time.RFC3339Nano),
+			"schema_version":  int32(1),
+			"retry_count":     int32(0),
+		},
+		ContentType:   "application/json",
+		DeliveryMode:  amqp.Persistent,
+		MessageId:     messageID,
+		CorrelationId: result.Request.Metadata.CorrelationID,
+		Timestamp:     occurredAt,
+		Body:          body,
+	}, nil
+}
+
+func reservationReleaseResultPayload(result app.ReservationReleaseResult) (string, any, error) {
+	switch result.Decision {
+	case app.ReservationReleaseDecisionReleased:
+		if result.Reservation.ReleasedAt == nil {
+			return "", nil, fmt.Errorf("released reservation timestamp is required")
+		}
+
+		return ReservationReleasedRoutingKey, reservationReleasedPayload{
+			ReservationID: result.Request.ReservationID,
+			ReleasedAt:    *result.Reservation.ReleasedAt,
+		}, nil
+	case app.ReservationReleaseDecisionFailed:
+		return ReservationReleaseFailedRoutingKey, reservationReleaseFailedPayload{
+			ReservationID: result.Request.ReservationID,
+			Reason:        result.FailureReason,
+			Details:       "Reservation release could not be completed.",
+		}, nil
+	default:
+		return "", nil, fmt.Errorf("unsupported reservation release decision %q", result.Decision)
+	}
 }
 
 func (p *Publisher) publishWithConfirmation(
@@ -275,6 +358,17 @@ type reservationRejectedPayload struct {
 	OrderID       string `json:"order_id"`
 	SKU           string `json:"sku"`
 	Quantity      int    `json:"quantity"`
+	Reason        string `json:"reason"`
+	Details       string `json:"details"`
+}
+
+type reservationReleasedPayload struct {
+	ReservationID string    `json:"reservation_id"`
+	ReleasedAt    time.Time `json:"released_at"`
+}
+
+type reservationReleaseFailedPayload struct {
+	ReservationID string `json:"reservation_id"`
 	Reason        string `json:"reason"`
 	Details       string `json:"details"`
 }

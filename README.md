@@ -56,6 +56,7 @@ Transient processing failures are published to
 uses a fixed TTL and dead-letters messages back to the main inventory exchange.
 Malformed messages and messages that exhaust retries are routed to
 `stockflow.erp-mock.inventory.reservation.requested.v1.dlq`.
+The reservation release queue uses the same retry and dead-letter policy.
 
 ## HTTP endpoints
 

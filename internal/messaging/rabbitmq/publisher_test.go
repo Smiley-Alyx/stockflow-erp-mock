@@ -84,6 +84,64 @@ func TestNewReservationResultMessageRejectsUnsupportedDecision(t *testing.T) {
 	}
 }
 
+func TestNewReservationReleaseResultMessageMapsReleasedResult(t *testing.T) {
+	occurredAt := time.Date(2026, time.May, 31, 9, 10, 1, 0, time.UTC)
+	releasedAt := time.Date(2026, time.May, 31, 9, 10, 0, 0, time.UTC)
+	result := reservationReleaseResultFixture()
+	result.Reservation.ReleasedAt = &releasedAt
+
+	routingKey, publishing, err := newReservationReleaseResultMessage(
+		result,
+		"657e4ce2-95ef-405e-a7ed-67b5a65395b0",
+		occurredAt,
+	)
+
+	if err != nil {
+		t.Fatalf("newReservationReleaseResultMessage() error = %v", err)
+	}
+	if routingKey != ReservationReleasedRoutingKey {
+		t.Errorf("routingKey = %q, want %q", routingKey, ReservationReleasedRoutingKey)
+	}
+	if publishing.Headers["causation_id"] != result.Request.Metadata.MessageID {
+		t.Errorf("causation_id = %q", publishing.Headers["causation_id"])
+	}
+
+	var payload reservationReleasedPayload
+	if err := json.Unmarshal(publishing.Body, &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if payload.ReservationID != result.Request.ReservationID {
+		t.Errorf("ReservationID = %q, want %q", payload.ReservationID, result.Request.ReservationID)
+	}
+}
+
+func TestNewReservationReleaseResultMessageMapsFailedResult(t *testing.T) {
+	result := reservationReleaseResultFixture()
+	result.Decision = app.ReservationReleaseDecisionFailed
+	result.FailureReason = app.ReservationReleaseFailureReasonNotFound
+
+	routingKey, publishing, err := newReservationReleaseResultMessage(
+		result,
+		"987f80c0-b2ac-42cb-bbac-c91e55c66999",
+		time.Date(2026, time.May, 31, 9, 10, 1, 0, time.UTC),
+	)
+
+	if err != nil {
+		t.Fatalf("newReservationReleaseResultMessage() error = %v", err)
+	}
+	if routingKey != ReservationReleaseFailedRoutingKey {
+		t.Errorf("routingKey = %q, want %q", routingKey, ReservationReleaseFailedRoutingKey)
+	}
+
+	var payload reservationReleaseFailedPayload
+	if err := json.Unmarshal(publishing.Body, &payload); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if payload.Reason != app.ReservationReleaseFailureReasonNotFound {
+		t.Errorf("Reason = %q, want %q", payload.Reason, app.ReservationReleaseFailureReasonNotFound)
+	}
+}
+
 func TestNewUUID(t *testing.T) {
 	messageID, err := newUUID()
 	if err != nil {
@@ -136,6 +194,27 @@ func reservationResultFixture() app.ReservationResult {
 			Quantity:  2,
 			Status:    inventory.ReservationStatusActive,
 			CreatedAt: time.Date(2026, time.May, 31, 9, 0, 1, 0, time.UTC),
+		},
+	}
+}
+
+func reservationReleaseResultFixture() app.ReservationReleaseResult {
+	return app.ReservationReleaseResult{
+		Decision: app.ReservationReleaseDecisionReleased,
+		Request: app.ReservationReleaseRequest{
+			Metadata: app.MessageMetadata{
+				MessageID:      "7c6fd9ac-b083-4f79-a1ab-5858637be6af",
+				CorrelationID:  "bb8d8f75-5210-4038-98cc-f2237d192ff8",
+				IdempotencyKey: "reservation:res-10001:release",
+			},
+			ReservationID: "res-10001",
+			Reason:        "order_cancelled",
+		},
+		Reservation: inventory.Reservation{
+			ID:       "res-10001",
+			SKU:      "sku-red-mug",
+			Quantity: 2,
+			Status:   inventory.ReservationStatusReleased,
 		},
 	}
 }

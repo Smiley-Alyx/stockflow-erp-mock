@@ -215,13 +215,16 @@ func (reservationHandlerStub) HandleReservationRequested(
 }
 
 type reservationResultPublisherStub struct {
-	published     int
-	resultErr     error
-	retried       int
-	retryCount    int
-	retryErr      error
-	deadLettered  int
-	deadLetterErr error
+	published        int
+	resultErr        error
+	releasePublished int
+	releaseResultErr error
+	retried          int
+	retryRoutingKey  string
+	retryCount       int
+	retryErr         error
+	deadLettered     int
+	deadLetterErr    error
 }
 
 func (p *reservationResultPublisherStub) PublishReservationResult(context.Context, app.ReservationResult) error {
@@ -229,13 +232,32 @@ func (p *reservationResultPublisherStub) PublishReservationResult(context.Contex
 	return p.resultErr
 }
 
-func (p *reservationResultPublisherStub) PublishRetry(_ context.Context, _ amqp.Delivery, retryCount int) error {
+func (p *reservationResultPublisherStub) PublishReservationReleaseResult(
+	context.Context,
+	app.ReservationReleaseResult,
+) error {
+	p.releasePublished++
+	return p.releaseResultErr
+}
+
+func (p *reservationResultPublisherStub) PublishRetry(
+	_ context.Context,
+	_ amqp.Delivery,
+	routingKey string,
+	retryCount int,
+) error {
 	p.retried++
+	p.retryRoutingKey = routingKey
 	p.retryCount = retryCount
 	return p.retryErr
 }
 
-func (p *reservationResultPublisherStub) PublishDeadLetter(_ context.Context, _ amqp.Delivery, _ int) error {
+func (p *reservationResultPublisherStub) PublishDeadLetter(
+	_ context.Context,
+	_ amqp.Delivery,
+	_ string,
+	_ int,
+) error {
 	p.deadLettered++
 	return p.deadLetterErr
 }

@@ -14,13 +14,17 @@ import (
 )
 
 const (
-	InventoryDeadLetterExchangeName         = "stockflow.inventory.dlx"
-	InventoryExchangeName                   = "stockflow.inventory"
-	InventoryRetryExchangeName              = "stockflow.inventory.retry"
-	ReservationRequestedDeadLetterQueueName = "stockflow.erp-mock.inventory.reservation.requested.v1.dlq"
-	ReservationRequestedQueueName           = "stockflow.erp-mock.inventory.reservation.requested.v1"
-	ReservationRequestedRetryQueueName      = "stockflow.erp-mock.inventory.reservation.requested.v1.retry"
-	ReservationRequestedRoutingKey          = "inventory.reservation.requested.v1"
+	InventoryDeadLetterExchangeName                = "stockflow.inventory.dlx"
+	InventoryExchangeName                          = "stockflow.inventory"
+	InventoryRetryExchangeName                     = "stockflow.inventory.retry"
+	ReservationReleaseRequestedDeadLetterQueueName = "stockflow.erp-mock.inventory.reservation.release.requested.v1.dlq"
+	ReservationReleaseRequestedQueueName           = "stockflow.erp-mock.inventory.reservation.release.requested.v1"
+	ReservationReleaseRequestedRetryQueueName      = "stockflow.erp-mock.inventory.reservation.release.requested.v1.retry"
+	ReservationReleaseRequestedRoutingKey          = "inventory.reservation.release.requested.v1"
+	ReservationRequestedDeadLetterQueueName        = "stockflow.erp-mock.inventory.reservation.requested.v1.dlq"
+	ReservationRequestedQueueName                  = "stockflow.erp-mock.inventory.reservation.requested.v1"
+	ReservationRequestedRetryQueueName             = "stockflow.erp-mock.inventory.reservation.requested.v1.retry"
+	ReservationRequestedRoutingKey                 = "inventory.reservation.requested.v1"
 )
 
 type ConsumerConfig struct {
@@ -42,8 +46,9 @@ type Consumer struct {
 
 type ReservationResultPublisher interface {
 	PublishReservationResult(ctx context.Context, result app.ReservationResult) error
-	PublishRetry(ctx context.Context, delivery amqp.Delivery, retryCount int) error
-	PublishDeadLetter(ctx context.Context, delivery amqp.Delivery, retryCount int) error
+	PublishReservationReleaseResult(ctx context.Context, result app.ReservationReleaseResult) error
+	PublishRetry(ctx context.Context, delivery amqp.Delivery, routingKey string, retryCount int) error
+	PublishDeadLetter(ctx context.Context, delivery amqp.Delivery, routingKey string, retryCount int) error
 }
 
 func NewConsumer(config ConsumerConfig, logger *slog.Logger) (*Consumer, error) {
@@ -76,11 +81,13 @@ func NewConsumer(config ConsumerConfig, logger *slog.Logger) (*Consumer, error) 
 func (c *Consumer) Consume(
 	ctx context.Context,
 	handler app.ReservationRequestHandler,
+	releaseHandler app.ReservationReleaseRequestHandler,
 	publisher ReservationResultPublisher,
 ) error {
+	reservationConsumerTag := c.consumerTag + "-reservation-requested"
 	deliveries, err := c.channel.Consume(
 		ReservationRequestedQueueName,
-		c.consumerTag,
+		reservationConsumerTag,
 		false,
 		false,
 		false,
@@ -88,7 +95,21 @@ func (c *Consumer) Consume(
 		nil,
 	)
 	if err != nil {
-		return fmt.Errorf("start RabbitMQ consumer: %w", err)
+		return fmt.Errorf("start RabbitMQ reservation requested consumer: %w", err)
+	}
+
+	releaseConsumerTag := c.consumerTag + "-reservation-release-requested"
+	releaseDeliveries, err := c.channel.Consume(
+		ReservationReleaseRequestedQueueName,
+		releaseConsumerTag,
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("start RabbitMQ reservation release requested consumer: %w", err)
 	}
 
 	c.logger.Info(
@@ -96,12 +117,20 @@ func (c *Consumer) Consume(
 		"queue", ReservationRequestedQueueName,
 		"routing_key", ReservationRequestedRoutingKey,
 	)
+	c.logger.Info(
+		"rabbitmq consumer started",
+		"queue", ReservationReleaseRequestedQueueName,
+		"routing_key", ReservationReleaseRequestedRoutingKey,
+	)
 
 	for {
 		select {
 		case <-ctx.Done():
-			if err := c.channel.Cancel(c.consumerTag, false); err != nil && !errors.Is(err, amqp.ErrClosed) {
-				return fmt.Errorf("cancel RabbitMQ consumer: %w", err)
+			if err := c.channel.Cancel(reservationConsumerTag, false); err != nil && !errors.Is(err, amqp.ErrClosed) {
+				return fmt.Errorf("cancel RabbitMQ reservation requested consumer: %w", err)
+			}
+			if err := c.channel.Cancel(releaseConsumerTag, false); err != nil && !errors.Is(err, amqp.ErrClosed) {
+				return fmt.Errorf("cancel RabbitMQ reservation release requested consumer: %w", err)
 			}
 
 			return nil
@@ -115,6 +144,18 @@ func (c *Consumer) Consume(
 			}
 
 			if err := c.handleDelivery(ctx, delivery, handler, publisher); err != nil {
+				return err
+			}
+		case delivery, open := <-releaseDeliveries:
+			if !open {
+				if ctx.Err() != nil {
+					return nil
+				}
+
+				return fmt.Errorf("RabbitMQ reservation release deliveries channel closed")
+			}
+
+			if err := c.handleReleaseDelivery(ctx, delivery, releaseHandler, publisher); err != nil {
 				return err
 			}
 		}
@@ -173,78 +214,83 @@ func (c *Consumer) declareTopology(prefetchCount int, retryDelay time.Duration) 
 		return fmt.Errorf("declare inventory dead-letter exchange: %w", err)
 	}
 
-	if _, err := c.channel.QueueDeclare(
+	if err := c.declareRequestTopology(
 		ReservationRequestedQueueName,
+		ReservationRequestedRetryQueueName,
+		ReservationRequestedDeadLetterQueueName,
+		ReservationRequestedRoutingKey,
+		retryDelay,
+	); err != nil {
+		return fmt.Errorf("declare reservation requested topology: %w", err)
+	}
+
+	if err := c.declareRequestTopology(
+		ReservationReleaseRequestedQueueName,
+		ReservationReleaseRequestedRetryQueueName,
+		ReservationReleaseRequestedDeadLetterQueueName,
+		ReservationReleaseRequestedRoutingKey,
+		retryDelay,
+	); err != nil {
+		return fmt.Errorf("declare reservation release requested topology: %w", err)
+	}
+
+	if err := c.channel.Qos(prefetchCount, 0, false); err != nil {
+		return fmt.Errorf("configure RabbitMQ prefetch: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Consumer) declareRequestTopology(
+	queueName string,
+	retryQueueName string,
+	deadLetterQueueName string,
+	routingKey string,
+	retryDelay time.Duration,
+) error {
+	if _, err := c.channel.QueueDeclare(
+		queueName,
 		true,
 		false,
 		false,
 		false,
 		amqp.Table{
 			"x-dead-letter-exchange":    InventoryDeadLetterExchangeName,
-			"x-dead-letter-routing-key": ReservationRequestedRoutingKey,
+			"x-dead-letter-routing-key": routingKey,
 		},
 	); err != nil {
-		return fmt.Errorf("declare reservation requested queue: %w", err)
+		return fmt.Errorf("declare queue %q: %w", queueName, err)
 	}
 
-	if err := c.channel.QueueBind(
-		ReservationRequestedQueueName,
-		ReservationRequestedRoutingKey,
-		InventoryExchangeName,
-		false,
-		nil,
-	); err != nil {
-		return fmt.Errorf("bind reservation requested queue: %w", err)
+	if err := c.channel.QueueBind(queueName, routingKey, InventoryExchangeName, false, nil); err != nil {
+		return fmt.Errorf("bind queue %q: %w", queueName, err)
 	}
 
 	if _, err := c.channel.QueueDeclare(
-		ReservationRequestedRetryQueueName,
+		retryQueueName,
 		true,
 		false,
 		false,
 		false,
 		amqp.Table{
 			"x-dead-letter-exchange":    InventoryExchangeName,
-			"x-dead-letter-routing-key": ReservationRequestedRoutingKey,
+			"x-dead-letter-routing-key": routingKey,
 			"x-message-ttl":             retryDelay.Milliseconds(),
 		},
 	); err != nil {
-		return fmt.Errorf("declare reservation requested retry queue: %w", err)
+		return fmt.Errorf("declare retry queue %q: %w", retryQueueName, err)
 	}
 
-	if err := c.channel.QueueBind(
-		ReservationRequestedRetryQueueName,
-		ReservationRequestedRoutingKey,
-		InventoryRetryExchangeName,
-		false,
-		nil,
-	); err != nil {
-		return fmt.Errorf("bind reservation requested retry queue: %w", err)
+	if err := c.channel.QueueBind(retryQueueName, routingKey, InventoryRetryExchangeName, false, nil); err != nil {
+		return fmt.Errorf("bind retry queue %q: %w", retryQueueName, err)
 	}
 
-	if _, err := c.channel.QueueDeclare(
-		ReservationRequestedDeadLetterQueueName,
-		true,
-		false,
-		false,
-		false,
-		nil,
-	); err != nil {
-		return fmt.Errorf("declare reservation requested dead-letter queue: %w", err)
+	if _, err := c.channel.QueueDeclare(deadLetterQueueName, true, false, false, false, nil); err != nil {
+		return fmt.Errorf("declare dead-letter queue %q: %w", deadLetterQueueName, err)
 	}
 
-	if err := c.channel.QueueBind(
-		ReservationRequestedDeadLetterQueueName,
-		ReservationRequestedRoutingKey,
-		InventoryDeadLetterExchangeName,
-		false,
-		nil,
-	); err != nil {
-		return fmt.Errorf("bind reservation requested dead-letter queue: %w", err)
-	}
-
-	if err := c.channel.Qos(prefetchCount, 0, false); err != nil {
-		return fmt.Errorf("configure RabbitMQ prefetch: %w", err)
+	if err := c.channel.QueueBind(deadLetterQueueName, routingKey, InventoryDeadLetterExchangeName, false, nil); err != nil {
+		return fmt.Errorf("bind dead-letter queue %q: %w", deadLetterQueueName, err)
 	}
 
 	return nil
@@ -276,7 +322,7 @@ func (c *Consumer) handleDelivery(
 			return nack(delivery, false)
 		}
 
-		return c.retryOrDeadLetter(ctx, delivery, request.Metadata.RetryCount, publisher)
+		return c.retryOrDeadLetter(ctx, delivery, ReservationRequestedRoutingKey, request.Metadata.RetryCount, publisher)
 	}
 
 	if err := publisher.PublishReservationResult(ctx, result); err != nil {
@@ -289,7 +335,7 @@ func (c *Consumer) handleDelivery(
 			"error", err,
 		)
 
-		return c.retryOrDeadLetter(ctx, delivery, request.Metadata.RetryCount, publisher)
+		return c.retryOrDeadLetter(ctx, delivery, ReservationRequestedRoutingKey, request.Metadata.RetryCount, publisher)
 	}
 
 	c.logger.Info(
@@ -304,15 +350,82 @@ func (c *Consumer) handleDelivery(
 	return ack(delivery)
 }
 
+func (c *Consumer) handleReleaseDelivery(
+	ctx context.Context,
+	delivery amqp.Delivery,
+	handler app.ReservationReleaseRequestHandler,
+	publisher ReservationResultPublisher,
+) error {
+	request, err := decodeReservationReleaseRequested(delivery)
+	if err != nil {
+		c.logger.Warn("reject invalid RabbitMQ release message", "error", err)
+		return nack(delivery, false)
+	}
+
+	result, err := handler.HandleReservationReleaseRequested(ctx, request)
+	if err != nil {
+		c.logger.Error(
+			"process reservation release request",
+			"message_id", request.Metadata.MessageID,
+			"correlation_id", request.Metadata.CorrelationID,
+			"reservation_id", request.ReservationID,
+			"error", err,
+		)
+
+		if isPermanentHandlerError(err) {
+			return nack(delivery, false)
+		}
+
+		return c.retryOrDeadLetter(
+			ctx,
+			delivery,
+			ReservationReleaseRequestedRoutingKey,
+			request.Metadata.RetryCount,
+			publisher,
+		)
+	}
+
+	if err := publisher.PublishReservationReleaseResult(ctx, result); err != nil {
+		c.logger.Error(
+			"publish reservation release result",
+			"message_id", request.Metadata.MessageID,
+			"correlation_id", request.Metadata.CorrelationID,
+			"reservation_id", request.ReservationID,
+			"decision", result.Decision,
+			"error", err,
+		)
+
+		return c.retryOrDeadLetter(
+			ctx,
+			delivery,
+			ReservationReleaseRequestedRoutingKey,
+			request.Metadata.RetryCount,
+			publisher,
+		)
+	}
+
+	c.logger.Info(
+		"reservation release request processed",
+		"message_id", request.Metadata.MessageID,
+		"correlation_id", request.Metadata.CorrelationID,
+		"reservation_id", request.ReservationID,
+		"decision", result.Decision,
+		"idempotency_hit", result.IdempotencyHit,
+	)
+
+	return ack(delivery)
+}
+
 func (c *Consumer) retryOrDeadLetter(
 	ctx context.Context,
 	delivery amqp.Delivery,
+	routingKey string,
 	retryCount int,
 	publisher ReservationResultPublisher,
 ) error {
 	nextRetryCount := retryCount + 1
 	if nextRetryCount > c.maxRetryCount {
-		if err := publisher.PublishDeadLetter(ctx, delivery, retryCount); err != nil {
+		if err := publisher.PublishDeadLetter(ctx, delivery, routingKey, retryCount); err != nil {
 			c.logger.Error("publish message to DLQ", "retry_count", retryCount, "error", err)
 			return nack(delivery, true)
 		}
@@ -322,7 +435,7 @@ func (c *Consumer) retryOrDeadLetter(
 		return ack(delivery)
 	}
 
-	if err := publisher.PublishRetry(ctx, delivery, nextRetryCount); err != nil {
+	if err := publisher.PublishRetry(ctx, delivery, routingKey, nextRetryCount); err != nil {
 		c.logger.Error("publish message for retry", "retry_count", nextRetryCount, "error", err)
 		return nack(delivery, true)
 	}
