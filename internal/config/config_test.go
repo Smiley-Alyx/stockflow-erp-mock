@@ -10,8 +10,10 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("ERP_HTTP_ADDRESS", "")
 	t.Setenv("ERP_LOG_LEVEL", "")
 	t.Setenv("ERP_RABBITMQ_CONSUMER_TAG", "")
+	t.Setenv("ERP_RABBITMQ_MAX_RETRY_COUNT", "")
 	t.Setenv("ERP_RABBITMQ_PREFETCH_COUNT", "")
 	t.Setenv("ERP_RABBITMQ_PUBLISH_TIMEOUT", "")
+	t.Setenv("ERP_RABBITMQ_RETRY_DELAY", "")
 	t.Setenv("ERP_RABBITMQ_URL", "")
 	t.Setenv("ERP_SHUTDOWN_TIMEOUT", "")
 
@@ -29,11 +31,17 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.RabbitMQConsumerTag != "stockflow-erp-mock" {
 		t.Errorf("RabbitMQConsumerTag = %q, want %q", cfg.RabbitMQConsumerTag, "stockflow-erp-mock")
 	}
+	if cfg.RabbitMQMaxRetryCount != 3 {
+		t.Errorf("RabbitMQMaxRetryCount = %d, want %d", cfg.RabbitMQMaxRetryCount, 3)
+	}
 	if cfg.RabbitMQPrefetchCount != 10 {
 		t.Errorf("RabbitMQPrefetchCount = %d, want %d", cfg.RabbitMQPrefetchCount, 10)
 	}
 	if cfg.RabbitMQPublishTimeout != 5*time.Second {
 		t.Errorf("RabbitMQPublishTimeout = %v, want %v", cfg.RabbitMQPublishTimeout, 5*time.Second)
+	}
+	if cfg.RabbitMQRetryDelay != 2*time.Second {
+		t.Errorf("RabbitMQRetryDelay = %v, want %v", cfg.RabbitMQRetryDelay, 2*time.Second)
 	}
 	if cfg.RabbitMQURL != "amqp://stockflow:stockflow@localhost:5672/" {
 		t.Errorf("RabbitMQURL = %q", cfg.RabbitMQURL)
@@ -47,8 +55,10 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("ERP_HTTP_ADDRESS", "127.0.0.1:9090")
 	t.Setenv("ERP_LOG_LEVEL", "debug")
 	t.Setenv("ERP_RABBITMQ_CONSUMER_TAG", "erp-mock-test")
+	t.Setenv("ERP_RABBITMQ_MAX_RETRY_COUNT", "5")
 	t.Setenv("ERP_RABBITMQ_PREFETCH_COUNT", "25")
 	t.Setenv("ERP_RABBITMQ_PUBLISH_TIMEOUT", "2s")
+	t.Setenv("ERP_RABBITMQ_RETRY_DELAY", "500ms")
 	t.Setenv("ERP_RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 	t.Setenv("ERP_SHUTDOWN_TIMEOUT", "3s")
 
@@ -66,11 +76,17 @@ func TestLoadOverrides(t *testing.T) {
 	if cfg.RabbitMQConsumerTag != "erp-mock-test" {
 		t.Errorf("RabbitMQConsumerTag = %q, want %q", cfg.RabbitMQConsumerTag, "erp-mock-test")
 	}
+	if cfg.RabbitMQMaxRetryCount != 5 {
+		t.Errorf("RabbitMQMaxRetryCount = %d, want %d", cfg.RabbitMQMaxRetryCount, 5)
+	}
 	if cfg.RabbitMQPrefetchCount != 25 {
 		t.Errorf("RabbitMQPrefetchCount = %d, want %d", cfg.RabbitMQPrefetchCount, 25)
 	}
 	if cfg.RabbitMQPublishTimeout != 2*time.Second {
 		t.Errorf("RabbitMQPublishTimeout = %v, want %v", cfg.RabbitMQPublishTimeout, 2*time.Second)
+	}
+	if cfg.RabbitMQRetryDelay != 500*time.Millisecond {
+		t.Errorf("RabbitMQRetryDelay = %v, want %v", cfg.RabbitMQRetryDelay, 500*time.Millisecond)
 	}
 	if cfg.RabbitMQURL != "amqp://guest:guest@rabbitmq:5672/" {
 		t.Errorf("RabbitMQURL = %q", cfg.RabbitMQURL)

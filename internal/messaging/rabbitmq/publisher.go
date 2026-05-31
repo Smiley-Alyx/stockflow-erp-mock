@@ -74,18 +74,45 @@ func (p *Publisher) PublishReservationResult(ctx context.Context, result app.Res
 		return err
 	}
 
+	return p.publishWithConfirmation(ctx, InventoryExchangeName, routingKey, publishing)
+}
+
+func (p *Publisher) PublishRetry(ctx context.Context, delivery amqp.Delivery, retryCount int) error {
+	return p.publishWithConfirmation(
+		ctx,
+		InventoryRetryExchangeName,
+		ReservationRequestedRoutingKey,
+		newForwardedDelivery(delivery, retryCount),
+	)
+}
+
+func (p *Publisher) PublishDeadLetter(ctx context.Context, delivery amqp.Delivery, retryCount int) error {
+	return p.publishWithConfirmation(
+		ctx,
+		InventoryDeadLetterExchangeName,
+		ReservationRequestedRoutingKey,
+		newForwardedDelivery(delivery, retryCount),
+	)
+}
+
+func (p *Publisher) publishWithConfirmation(
+	ctx context.Context,
+	exchange string,
+	routingKey string,
+	publishing amqp.Publishing,
+) error {
 	publishContext, cancel := context.WithTimeout(ctx, p.publishTimeout)
 	defer cancel()
 
 	if err := p.channel.PublishWithContext(
 		publishContext,
-		InventoryExchangeName,
+		exchange,
 		routingKey,
 		false,
 		false,
 		publishing,
 	); err != nil {
-		return fmt.Errorf("publish reservation result: %w", err)
+		return fmt.Errorf("publish RabbitMQ message: %w", err)
 	}
 
 	select {
@@ -119,19 +146,43 @@ func (p *Publisher) Close() error {
 }
 
 func (p *Publisher) declareTopology() error {
-	if err := p.channel.ExchangeDeclare(
+	for _, exchangeName := range []string{
 		InventoryExchangeName,
-		"topic",
-		true,
-		false,
-		false,
-		false,
-		nil,
-	); err != nil {
-		return fmt.Errorf("declare inventory exchange for publisher: %w", err)
+		InventoryRetryExchangeName,
+		InventoryDeadLetterExchangeName,
+	} {
+		if err := p.channel.ExchangeDeclare(
+			exchangeName,
+			"topic",
+			true,
+			false,
+			false,
+			false,
+			nil,
+		); err != nil {
+			return fmt.Errorf("declare exchange %q for publisher: %w", exchangeName, err)
+		}
 	}
 
 	return nil
+}
+
+func newForwardedDelivery(delivery amqp.Delivery, retryCount int) amqp.Publishing {
+	headers := make(amqp.Table, len(delivery.Headers)+1)
+	for name, value := range delivery.Headers {
+		headers[name] = value
+	}
+	headers["retry_count"] = int32(retryCount)
+
+	return amqp.Publishing{
+		Headers:       headers,
+		ContentType:   delivery.ContentType,
+		DeliveryMode:  amqp.Persistent,
+		CorrelationId: delivery.CorrelationId,
+		MessageId:     delivery.MessageId,
+		Timestamp:     delivery.Timestamp,
+		Body:          delivery.Body,
+	}
 }
 
 func newReservationResultMessage(

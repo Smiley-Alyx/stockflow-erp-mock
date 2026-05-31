@@ -43,9 +43,19 @@ make docker-down
 | `ERP_LOG_LEVEL` | `info` | Structured log level |
 | `ERP_RABBITMQ_URL` | `amqp://stockflow:stockflow@localhost:5672/` | RabbitMQ connection URL |
 | `ERP_RABBITMQ_CONSUMER_TAG` | `stockflow-erp-mock` | RabbitMQ consumer tag |
+| `ERP_RABBITMQ_MAX_RETRY_COUNT` | `3` | Maximum number of delayed processing retries |
 | `ERP_RABBITMQ_PREFETCH_COUNT` | `10` | Maximum number of unacknowledged messages |
 | `ERP_RABBITMQ_PUBLISH_TIMEOUT` | `5s` | Publisher confirmation timeout |
+| `ERP_RABBITMQ_RETRY_DELAY` | `2s` | Delay before another processing attempt |
 | `ERP_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown timeout |
+
+## RabbitMQ reliability topology
+
+Transient processing failures are published to
+`stockflow.erp-mock.inventory.reservation.requested.v1.retry`. The retry queue
+uses a fixed TTL and dead-letters messages back to the main inventory exchange.
+Malformed messages and messages that exhaust retries are routed to
+`stockflow.erp-mock.inventory.reservation.requested.v1.dlq`.
 
 ## HTTP endpoints
 

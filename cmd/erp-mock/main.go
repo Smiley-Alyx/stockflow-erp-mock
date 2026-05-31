@@ -42,7 +42,9 @@ func run() int {
 	rabbitMQConsumer, err := rabbitmq.NewConsumer(rabbitmq.ConsumerConfig{
 		URL:           cfg.RabbitMQURL,
 		ConsumerTag:   cfg.RabbitMQConsumerTag,
+		MaxRetryCount: cfg.RabbitMQMaxRetryCount,
 		PrefetchCount: cfg.RabbitMQPrefetchCount,
+		RetryDelay:    cfg.RabbitMQRetryDelay,
 	}, logger)
 	if err != nil {
 		logger.Error("initialize RabbitMQ consumer", "error", err)

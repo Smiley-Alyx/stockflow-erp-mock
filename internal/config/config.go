@@ -13,8 +13,10 @@ const (
 	defaultHTTPAddress            = ":8080"
 	defaultLogLevel               = "info"
 	defaultRabbitMQConsumerTag    = "stockflow-erp-mock"
+	defaultRabbitMQMaxRetryCount  = 3
 	defaultRabbitMQPrefetchCount  = 10
 	defaultRabbitMQPublishTimeout = 5 * time.Second
+	defaultRabbitMQRetryDelay     = 2 * time.Second
 	defaultRabbitMQURL            = "amqp://stockflow:stockflow@localhost:5672/"
 	defaultShutdownTimeout        = 10 * time.Second
 )
@@ -23,8 +25,10 @@ type Config struct {
 	HTTPAddress            string
 	LogLevel               slog.Level
 	RabbitMQConsumerTag    string
+	RabbitMQMaxRetryCount  int
 	RabbitMQPrefetchCount  int
 	RabbitMQPublishTimeout time.Duration
+	RabbitMQRetryDelay     time.Duration
 	RabbitMQURL            string
 	ShutdownTimeout        time.Duration
 }
@@ -50,12 +54,24 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	rabbitMQRetryDelay, err := durationFromEnv("ERP_RABBITMQ_RETRY_DELAY", defaultRabbitMQRetryDelay)
+	if err != nil {
+		return Config{}, err
+	}
+
+	rabbitMQMaxRetryCount, err := positiveIntFromEnv("ERP_RABBITMQ_MAX_RETRY_COUNT", defaultRabbitMQMaxRetryCount)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		HTTPAddress:            stringFromEnv("ERP_HTTP_ADDRESS", defaultHTTPAddress),
 		LogLevel:               logLevel,
 		RabbitMQConsumerTag:    stringFromEnv("ERP_RABBITMQ_CONSUMER_TAG", defaultRabbitMQConsumerTag),
+		RabbitMQMaxRetryCount:  rabbitMQMaxRetryCount,
 		RabbitMQPrefetchCount:  rabbitMQPrefetchCount,
 		RabbitMQPublishTimeout: rabbitMQPublishTimeout,
+		RabbitMQRetryDelay:     rabbitMQRetryDelay,
 		RabbitMQURL:            stringFromEnv("ERP_RABBITMQ_URL", defaultRabbitMQURL),
 		ShutdownTimeout:        shutdownTimeout,
 	}, nil

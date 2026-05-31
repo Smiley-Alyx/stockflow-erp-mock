@@ -120,13 +120,62 @@ func TestConsumerHandleDeliveryRejectsInvalidMessageWithoutRequeue(t *testing.T)
 	}
 }
 
-func TestConsumerHandleDeliveryRequeuesMessageWhenPublishFails(t *testing.T) {
+func TestConsumerHandleDeliverySchedulesRetryWhenPublishFails(t *testing.T) {
 	acknowledger := &recordingAcknowledger{}
 	delivery := validDelivery()
 	delivery.Acknowledger = acknowledger
 	delivery.DeliveryTag = 1
-	consumer := &Consumer{logger: discardLogger()}
-	publisher := &reservationResultPublisherStub{err: errors.New("publish failed")}
+	consumer := &Consumer{logger: discardLogger(), maxRetryCount: 3}
+	publisher := &reservationResultPublisherStub{resultErr: errors.New("publish failed")}
+
+	err := consumer.handleDelivery(context.Background(), delivery, reservationHandlerStub{}, publisher)
+
+	if err != nil {
+		t.Fatalf("handleDelivery() error = %v", err)
+	}
+	if acknowledger.acked != 1 {
+		t.Errorf("acked = %d, want %d", acknowledger.acked, 1)
+	}
+	if publisher.retried != 1 {
+		t.Errorf("retried = %d, want %d", publisher.retried, 1)
+	}
+	if publisher.retryCount != 1 {
+		t.Errorf("retryCount = %d, want %d", publisher.retryCount, 1)
+	}
+}
+
+func TestConsumerHandleDeliveryMovesExhaustedMessageToDLQ(t *testing.T) {
+	acknowledger := &recordingAcknowledger{}
+	delivery := validDelivery()
+	delivery.Headers["retry_count"] = int32(3)
+	delivery.Acknowledger = acknowledger
+	delivery.DeliveryTag = 1
+	consumer := &Consumer{logger: discardLogger(), maxRetryCount: 3}
+	publisher := &reservationResultPublisherStub{resultErr: errors.New("publish failed")}
+
+	err := consumer.handleDelivery(context.Background(), delivery, reservationHandlerStub{}, publisher)
+
+	if err != nil {
+		t.Fatalf("handleDelivery() error = %v", err)
+	}
+	if acknowledger.acked != 1 {
+		t.Errorf("acked = %d, want %d", acknowledger.acked, 1)
+	}
+	if publisher.deadLettered != 1 {
+		t.Errorf("deadLettered = %d, want %d", publisher.deadLettered, 1)
+	}
+}
+
+func TestConsumerHandleDeliveryFallsBackToRequeueWhenRetryPublishFails(t *testing.T) {
+	acknowledger := &recordingAcknowledger{}
+	delivery := validDelivery()
+	delivery.Acknowledger = acknowledger
+	delivery.DeliveryTag = 1
+	consumer := &Consumer{logger: discardLogger(), maxRetryCount: 3}
+	publisher := &reservationResultPublisherStub{
+		resultErr: errors.New("publish result failed"),
+		retryErr:  errors.New("publish retry failed"),
+	}
 
 	err := consumer.handleDelivery(context.Background(), delivery, reservationHandlerStub{}, publisher)
 
@@ -166,13 +215,29 @@ func (reservationHandlerStub) HandleReservationRequested(
 }
 
 type reservationResultPublisherStub struct {
-	published int
-	err       error
+	published     int
+	resultErr     error
+	retried       int
+	retryCount    int
+	retryErr      error
+	deadLettered  int
+	deadLetterErr error
 }
 
 func (p *reservationResultPublisherStub) PublishReservationResult(context.Context, app.ReservationResult) error {
 	p.published++
-	return p.err
+	return p.resultErr
+}
+
+func (p *reservationResultPublisherStub) PublishRetry(_ context.Context, _ amqp.Delivery, retryCount int) error {
+	p.retried++
+	p.retryCount = retryCount
+	return p.retryErr
+}
+
+func (p *reservationResultPublisherStub) PublishDeadLetter(_ context.Context, _ amqp.Delivery, _ int) error {
+	p.deadLettered++
+	return p.deadLetterErr
 }
 
 type recordingAcknowledger struct {

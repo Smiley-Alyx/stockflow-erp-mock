@@ -94,6 +94,28 @@ func TestNewUUID(t *testing.T) {
 	}
 }
 
+func TestNewForwardedDeliveryUpdatesRetryCount(t *testing.T) {
+	delivery := validDelivery()
+	delivery.ContentType = "application/json"
+	delivery.MessageId = "58d867f6-69e0-4f2f-b1ee-d587aaa48b6e"
+	delivery.CorrelationId = "bb8d8f75-5210-4038-98cc-f2237d192ff8"
+
+	publishing := newForwardedDelivery(delivery, 2)
+
+	if publishing.Headers["retry_count"] != int32(2) {
+		t.Errorf("retry_count = %v, want %v", publishing.Headers["retry_count"], int32(2))
+	}
+	if delivery.Headers["retry_count"] != int32(0) {
+		t.Errorf("original retry_count = %v, want %v", delivery.Headers["retry_count"], int32(0))
+	}
+	if publishing.MessageId != delivery.MessageId {
+		t.Errorf("MessageId = %q, want %q", publishing.MessageId, delivery.MessageId)
+	}
+	if publishing.DeliveryMode != amqp.Persistent {
+		t.Errorf("DeliveryMode = %d, want %d", publishing.DeliveryMode, amqp.Persistent)
+	}
+}
+
 func reservationResultFixture() app.ReservationResult {
 	return app.ReservationResult{
 		Decision: app.ReservationDecisionConfirmed,
