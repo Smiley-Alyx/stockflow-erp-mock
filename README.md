@@ -83,3 +83,6 @@ reservations, and dead-letter queue depth.
 
 The DLQ requeue endpoint accepts one of the logical queue names:
 `reservation_requests` or `reservation_release_requests`.
+
+Sandbox failure simulation modes and request examples are documented in
+[`docs/failure-modes.md`](docs/failure-modes.md).

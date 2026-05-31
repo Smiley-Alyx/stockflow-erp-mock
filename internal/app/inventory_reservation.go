@@ -35,6 +35,7 @@ const (
 )
 
 const ReservationRejectionReasonInsufficientStock = "INSUFFICIENT_STOCK"
+const ReservationRejectionReasonFailureMode = "FAILURE_MODE"
 
 var ErrIdempotencyConflict = errors.New("idempotency key conflicts with a different request")
 

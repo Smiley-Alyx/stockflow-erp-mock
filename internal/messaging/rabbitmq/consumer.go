@@ -350,6 +350,9 @@ func (c *Consumer) handleDelivery(
 
 		return c.retryOrDeadLetter(ctx, delivery, ReservationRequestedRoutingKey, request.Metadata.RetryCount, publisher)
 	}
+	if result.IdempotencyHit {
+		c.consumerMetrics().IncrementIdempotencyHit()
+	}
 
 	if err := publisher.PublishReservationResult(ctx, result); err != nil {
 		c.logger.Error(
@@ -379,9 +382,6 @@ func (c *Consumer) handleDelivery(
 		c.consumerMetrics().IncrementConfirmedReservation()
 	case app.ReservationDecisionRejected:
 		c.consumerMetrics().IncrementRejectedReservation()
-	}
-	if result.IdempotencyHit {
-		c.consumerMetrics().IncrementIdempotencyHit()
 	}
 
 	return ack(delivery)
@@ -424,6 +424,9 @@ func (c *Consumer) handleReleaseDelivery(
 			publisher,
 		)
 	}
+	if result.IdempotencyHit {
+		c.consumerMetrics().IncrementIdempotencyHit()
+	}
 
 	if err := publisher.PublishReservationReleaseResult(ctx, result); err != nil {
 		c.logger.Error(
@@ -460,9 +463,6 @@ func (c *Consumer) handleReleaseDelivery(
 	)
 	if result.Decision == app.ReservationReleaseDecisionReleased {
 		c.consumerMetrics().IncrementReleasedReservation()
-	}
-	if result.IdempotencyHit {
-		c.consumerMetrics().IncrementIdempotencyHit()
 	}
 
 	return ack(delivery)

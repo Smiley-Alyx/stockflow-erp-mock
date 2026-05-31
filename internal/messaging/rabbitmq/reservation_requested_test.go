@@ -155,6 +155,25 @@ func TestConsumerHandleDeliverySchedulesRetryWhenPublishFails(t *testing.T) {
 	}
 }
 
+func TestConsumerHandleDeliveryRecordsIdempotencyHitWhenPublishFails(t *testing.T) {
+	acknowledger := &recordingAcknowledger{}
+	delivery := validDelivery()
+	delivery.Acknowledger = acknowledger
+	delivery.DeliveryTag = 1
+	metrics := &recordingConsumerMetrics{}
+	consumer := &Consumer{logger: discardLogger(), maxRetryCount: 3, metrics: metrics}
+	publisher := &reservationResultPublisherStub{resultErr: errors.New("publish failed")}
+
+	err := consumer.handleDelivery(context.Background(), delivery, idempotencyHitReservationHandlerStub{}, publisher)
+
+	if err != nil {
+		t.Fatalf("handleDelivery() error = %v", err)
+	}
+	if metrics.idempotencyHits != 1 {
+		t.Errorf("idempotencyHits = %d, want %d", metrics.idempotencyHits, 1)
+	}
+}
+
 func TestConsumerHandleDeliveryMovesExhaustedMessageToDLQ(t *testing.T) {
 	acknowledger := &recordingAcknowledger{}
 	delivery := validDelivery()
@@ -225,6 +244,18 @@ func (reservationHandlerStub) HandleReservationRequested(
 	return app.ReservationResult{Decision: app.ReservationDecisionConfirmed}, nil
 }
 
+type idempotencyHitReservationHandlerStub struct{}
+
+func (idempotencyHitReservationHandlerStub) HandleReservationRequested(
+	context.Context,
+	app.ReservationRequest,
+) (app.ReservationResult, error) {
+	return app.ReservationResult{
+		Decision:       app.ReservationDecisionConfirmed,
+		IdempotencyHit: true,
+	}, nil
+}
+
 type reservationResultPublisherStub struct {
 	published        int
 	resultErr        error
@@ -280,10 +311,11 @@ type recordingAcknowledger struct {
 }
 
 type recordingConsumerMetrics struct {
-	processed int
-	failed    int
-	confirmed int
-	outcome   string
+	processed       int
+	failed          int
+	confirmed       int
+	idempotencyHits int
+	outcome         string
 }
 
 func (m *recordingConsumerMetrics) ObserveProcessed(_ string, outcome string, _ time.Duration) {
@@ -303,7 +335,9 @@ func (m *recordingConsumerMetrics) IncrementConfirmedReservation() {
 
 func (m *recordingConsumerMetrics) IncrementReleasedReservation() {}
 
-func (m *recordingConsumerMetrics) IncrementIdempotencyHit() {}
+func (m *recordingConsumerMetrics) IncrementIdempotencyHit() {
+	m.idempotencyHits++
+}
 
 func (a *recordingAcknowledger) Ack(_ uint64, _ bool) error {
 	a.acked++

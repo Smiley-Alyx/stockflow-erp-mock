@@ -97,13 +97,22 @@ func run() int {
 
 	consumerErrors := make(chan error, 1)
 	idempotencyStore := memory.NewIdempotencyStore[app.ReservationResult]()
+	failureSimulationIdempotencyStore := memory.NewIdempotencyStore[app.ReservationResult]()
 	releaseIdempotencyStore := memory.NewIdempotencyStore[app.ReservationReleaseResult]()
+	failureModes := app.NewFailureModeController()
 	go func() {
 		consumerErrors <- rabbitMQConsumer.Consume(
 			consumerContext,
-			app.NewInventoryReservationHandler(inventoryRepository, idempotencyStore),
-			app.NewInventoryReservationReleaseHandler(inventoryRepository, releaseIdempotencyStore),
-			rabbitMQPublisher,
+			app.NewFailureSimulationReservationHandler(
+				app.NewInventoryReservationHandler(inventoryRepository, idempotencyStore),
+				failureSimulationIdempotencyStore,
+				failureModes,
+			),
+			app.NewFailureSimulationReservationReleaseHandler(
+				app.NewInventoryReservationReleaseHandler(inventoryRepository, releaseIdempotencyStore),
+				failureModes,
+			),
+			rabbitmq.NewFailureSimulationPublisher(rabbitMQPublisher, failureModes),
 		)
 	}()
 
@@ -111,7 +120,7 @@ func run() int {
 		cfg.HTTPAddress,
 		logger,
 		inventoryRepository,
-		app.NewFailureModeController(),
+		failureModes,
 		metrics.Handler(),
 		rabbitMQAdmin,
 	)
