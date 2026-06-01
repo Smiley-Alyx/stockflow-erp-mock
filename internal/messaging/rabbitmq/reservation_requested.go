@@ -72,7 +72,7 @@ func decodeMessageMetadata(headers amqp.Table) (app.MessageMetadata, error) {
 	if err != nil {
 		return app.MessageMetadata{}, err
 	}
-	causationID, err := requiredUUIDHeader(headers, "causation_id")
+	causationID, err := requiredStringHeader(headers, "causation_id")
 	if err != nil {
 		return app.MessageMetadata{}, err
 	}

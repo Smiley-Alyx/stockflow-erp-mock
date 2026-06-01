@@ -29,6 +29,20 @@ func TestDecodeReservationRequested(t *testing.T) {
 	}
 }
 
+func TestDecodeReservationRequestedAcceptsProviderCausationID(t *testing.T) {
+	delivery := validDelivery()
+	delivery.Headers["causation_id"] = "msg_01kt0bzrvawyamz054ybn76tmn"
+
+	request, err := decodeReservationRequested(delivery)
+	if err != nil {
+		t.Fatalf("decodeReservationRequested() error = %v", err)
+	}
+
+	if request.Metadata.CausationID != "msg_01kt0bzrvawyamz054ybn76tmn" {
+		t.Errorf("CausationID = %q", request.Metadata.CausationID)
+	}
+}
+
 func TestDecodeReservationRequestedRejectsInvalidMessages(t *testing.T) {
 	tests := []struct {
 		name   string

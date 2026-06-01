@@ -34,7 +34,7 @@ Every message carries the same header set:
 | --- | --- |
 | `message_id` | Unique ID of this message (UUID) |
 | `correlation_id` | Shared across the entire reservation lifecycle |
-| `causation_id` | ID of the message that caused this one |
+| `causation_id` | Non-empty ID of the message that caused this one; may use a provider-specific format |
 | `idempotency_key` | Stable deduplication key for processing |
 | `occurred_at` | UTC timestamp when the message was created |
 | `schema_version` | Payload schema version (currently `1`) |

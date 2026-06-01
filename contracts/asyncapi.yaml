@@ -143,7 +143,7 @@ components:
           description: Identifier shared by all messages in the integration flow.
         causation_id:
           type: string
-          format: uuid
+          minLength: 1
           description: Identifier of the message or command that caused this message.
         idempotency_key:
           type: string
